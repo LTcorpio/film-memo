@@ -72,6 +72,28 @@ export async function getDetails(tmdbId, mediaType) {
   });
 }
 
+/** 获取某 TV 剧集的季列表（轻量请求，不附带 credits 等） */
+export async function getSeasons(tmdbId) {
+  const data = await tmdbFetch(`/tv/${tmdbId}`);
+  if (!data) return [];
+  const seasons = data.seasons || [];
+  return seasons.map((s) => ({
+    season_number: s.season_number,
+    name: s.name || (s.season_number === 0 ? '特别篇' : `第 ${s.season_number} 季`),
+    air_date: s.air_date || null,
+    episode_count: s.episode_count ?? (s.episodes?.length || 0),
+    poster_path: s.poster_path || null,
+    overview: s.overview || null,
+  }));
+}
+
+/** 拉取某 TV 剧集指定季的详情（含 credits，用于季级演职员表） */
+export async function getSeasonDetails(tmdbId, seasonNumber) {
+  return tmdbFetch(`/tv/${tmdbId}/season/${seasonNumber}`, {
+    append_to_response: 'credits,external_ids',
+  });
+}
+
 /** 把 TMDB 详情整理为可入库的元数据对象 */
 export function normalizeDetails(details, mediaType) {
   if (!details) return null;

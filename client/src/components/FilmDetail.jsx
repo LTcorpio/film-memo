@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   saveMeta, deleteMeta, updateFilm, updateMeta,
-  uploadImage, scrapeImage, deleteImage,
+  uploadImage, scrapeImage, deleteImage, deleteFilm,
 } from '../api.js';
 import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
@@ -266,7 +266,7 @@ function ImageTools({ filmId, type, label, hasLocal, hasRemote, onChanged, onErr
   );
 }
 
-export default function FilmDetail({ film, onClose, onChanged }) {
+export default function FilmDetail({ film, onClose, onChanged, onDelete }) {
   const [metaOpen, setMetaOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -346,6 +346,20 @@ export default function FilmDetail({ film, onClose, onChanged }) {
     }
   };
 
+  const handleDeleteFilm = async () => {
+    if (!confirm(`确定删除观影记录「${film.name}」？该操作将同时删除其元数据与本地图片，且不可恢复。`)) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await deleteFilm(film.id);
+      onDelete?.();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const dateRange = [film.startDate, film.endDate]
     .filter(Boolean)
     .filter((v, i, a) => a.indexOf(v) === i)
@@ -390,28 +404,24 @@ export default function FilmDetail({ film, onClose, onChanged }) {
                       </div>
                     )}
                   </div>
-                  {meta && (
-                    <>
-                      <ImageTools
-                        filmId={film.id}
-                        type="poster"
-                        label="海报"
-                        hasLocal={Boolean(meta.posterLocal)}
-                        hasRemote={Boolean(meta.posterPath)}
-                        onChanged={onChanged}
-                        onError={setErr}
-                      />
-                      <ImageTools
-                        filmId={film.id}
-                        type="backdrop"
-                        label="背景图"
-                        hasLocal={Boolean(meta.backdropLocal)}
-                        hasRemote={Boolean(meta.backdropPath)}
-                        onChanged={onChanged}
-                        onError={setErr}
-                      />
-                    </>
-                  )}
+                  <ImageTools
+                    filmId={film.id}
+                    type="poster"
+                    label="海报"
+                    hasLocal={Boolean(meta?.posterLocal)}
+                    hasRemote={Boolean(meta?.posterPath)}
+                    onChanged={onChanged}
+                    onError={setErr}
+                  />
+                  <ImageTools
+                    filmId={film.id}
+                    type="backdrop"
+                    label="背景图"
+                    hasLocal={Boolean(meta?.backdropLocal)}
+                    hasRemote={Boolean(meta?.backdropPath)}
+                    onChanged={onChanged}
+                    onError={setErr}
+                  />
                 </div>
                 <div className="edit-forms-col">
                   <h3 className="edit-section-title"><Icon name="edit" size={16} /> 编辑观看记录</h3>
@@ -477,7 +487,7 @@ export default function FilmDetail({ film, onClose, onChanged }) {
                 </dl>
                 {film.notes && (
                   <dl className="watch-info">
-                    <div><dt>备注</dt><dd>{film.notes}</dd></div>
+                    <div><dt>备注</dt><dd className="notes-dd">{film.notes}</dd></div>
                   </dl>
                 )}
               </div>
@@ -498,12 +508,12 @@ export default function FilmDetail({ film, onClose, onChanged }) {
               </>
             ) : (
               <>
-                {!meta && (
+                {!film.hasMetadata && (
                   <button className="btn-primary" disabled={busy} onClick={() => setMetaOpen(true)}>
                     <Icon name="search" size={14} /> 搜索填充元数据
                   </button>
                 )}
-                {meta && (
+                {film.hasMetadata && (
                   <>
                     <button className="btn-secondary" disabled={busy} onClick={() => setMetaOpen(true)}>
                       <Icon name="refresh" size={14} /> 重新搜索
@@ -515,6 +525,9 @@ export default function FilmDetail({ film, onClose, onChanged }) {
                 )}
                 <button className="btn-secondary" disabled={busy} onClick={startEdit}>
                   <Icon name="edit" size={14} /> 编辑
+                </button>
+                <button className="btn-danger" disabled={busy} onClick={handleDeleteFilm}>
+                  <Icon name="trash" size={14} /> 删除记录
                 </button>
                 <span className="meta-hint">
                   {meta?.mediaType === 'tv' ? '电视剧' : meta?.mediaType === 'movie' ? '电影' : ''}

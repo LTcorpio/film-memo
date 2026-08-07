@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import 'dotenv/config';
 
 import { db } from './db.js';
-import { tmdbConfigured, getDetails, normalizeDetails, searchByName, imageUrl } from './tmdb.js';
+import { tmdbConfigured, getDetails, normalizeDetails, searchByName, imageUrl, getSeasons, getSeasonDetails } from './tmdb.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -25,7 +25,7 @@ mkdirSync(IMAGES_DIR, { recursive: true });
 // 静态托管本地图片：/images/{file} → data/images/{file}
 app.use('/images', express.static(IMAGES_DIR, { maxAge: '7d', immutable: true }));
 
-const META_COLS = `m.imdb_id AS m_imdb_id, m.tmdb_id AS m_tmdb_id, m.media_type AS m_media_type,
+const META_COLS = `m.film_id AS m_film_id, m.imdb_id AS m_imdb_id, m.tmdb_id AS m_tmdb_id, m.media_type AS m_media_type,
   m.title AS m_title, m.original_title AS m_original_title, m.overview AS m_overview,
   m.poster_path AS m_poster_path, m.backdrop_path AS m_backdrop_path,
   m.poster_local AS m_poster_local, m.backdrop_local AS m_backdrop_local,
@@ -104,7 +104,7 @@ function shapeFilm(row) {
     location: row.location,
     notes: row.notes,
     hasMetadata: Boolean(row.m_tmdb_id),
-    metadata: row.m_tmdb_id ? {
+    metadata: row.m_film_id ? {
       tmdbId: row.m_tmdb_id,
       mediaType: row.m_media_type,
       title: row.m_title,
@@ -153,7 +153,12 @@ app.get('/api/films', (req, res) => {
   const params = [];
   if (watchYear) { where.push('f.watch_year = ?'); params.push(Number(watchYear)); }
   if (releaseYear) { where.push('f.release_year = ?'); params.push(Number(releaseYear)); }
-  if (category) { where.push('f.category = ?'); params.push(category); }
+  // 特殊筛选：无元数据（未刮削 TMDB）
+  if (category === '__no_meta__') {
+    where.push('m.tmdb_id IS NULL');
+  } else if (category) {
+    where.push('f.category = ?'); params.push(category);
+  }
   if (platform) {
     where.push("(',' || f.platforms_raw || ',') LIKE ? COLLATE NOCASE");
     params.push(`%,${platform},%`);
@@ -198,8 +203,11 @@ app.get('/api/stats', (_req, res) => {
   const total = db.prepare('SELECT COUNT(*) AS c FROM films').get().c;
   const byCategory = db.prepare('SELECT category AS k, COUNT(*) AS c FROM films GROUP BY category ORDER BY c DESC').all();
   const byWatchYear = db.prepare('SELECT watch_year AS k, COUNT(*) AS c FROM films WHERE watch_year IS NOT NULL GROUP BY watch_year ORDER BY k').all();
-  const withMeta = db.prepare('SELECT COUNT(*) AS c FROM film_metadata').get().c;
-  res.json({ total, withMetadata: withMeta, byCategory, byWatchYear });
+  // 已刮削 TMDB 元数据 = 有 tmdb_id；无元数据 = tmdb_id 为空（含无元数据行）
+  const withMeta = db.prepare(`SELECT COUNT(*) AS c FROM films f
+    LEFT JOIN film_metadata m ON m.film_id = f.id WHERE m.tmdb_id IS NOT NULL`).get().c;
+  const withoutMeta = total - withMeta;
+  res.json({ total, withMetadata: withMeta, withoutMetadata: withoutMeta, byCategory, byWatchYear });
 });
 
 // ---- 按名称搜索 TMDB 候选（手动填充） ----
@@ -220,6 +228,25 @@ app.get('/api/meta/search', async (req, res) => {
   }
 });
 
+// ---- 获取某 TMDB TV 剧集的季列表 ----
+app.get('/api/meta/seasons', async (req, res) => {
+  const tmdbId = Number(req.query.tmdbId);
+  if (!tmdbId) return res.status(400).json({ error: '需要 tmdbId' });
+  if (!tmdbConfigured()) {
+    return res.status(400).json({ error: 'TMDB 未配置' });
+  }
+  try {
+    const seasons = (await getSeasons(tmdbId)).map((s) => ({
+      ...s,
+      posterUrl: imageUrl(s.poster_path, 'w185'),
+      year: s.air_date ? s.air_date.slice(0, 4) : null,
+    }));
+    res.json({ configured: true, seasons });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 /** 下载 TMDB 图片到本地，返回文件名（失败返回 null） */
 async function downloadTmdbImage(path, filename) {
   if (!path) return null;
@@ -229,7 +256,8 @@ async function downloadTmdbImage(path, filename) {
     const r = await fetch(url);
     if (!r.ok) throw new Error(`img ${r.status}`);
     const buf = Buffer.from(await r.arrayBuffer());
-    const file = filename + (extname(path) || '.jpg');
+    // 文件名含时间戳，避免重刮后浏览器仍使用旧缓存（immutable 静态资源）
+    const file = `${filename}-${Date.now()}${extname(path) || '.jpg'}`;
     writeFileSync(join(IMAGES_DIR, file), buf);
     return file;
   } catch (e) {
@@ -245,17 +273,43 @@ app.post('/api/films/:id/metadata', async (req, res) => {
   if (!tmdbConfigured()) {
     return res.status(400).json({ error: 'TMDB 未配置' });
   }
-  const { tmdbId, mediaType } = req.body || {};
+  const { tmdbId, mediaType, season } = req.body || {};
   if (!tmdbId || !mediaType) {
     return res.status(400).json({ error: '需要 tmdbId 与 mediaType' });
   }
   try {
     const details = await getDetails(tmdbId, mediaType);
+
+    // TV 剧集：若指定了具体季，先拉取该季详情（含 credits），
+    // 用季级数据覆盖 details 对应字段，使 normalizeDetails 产出季级演职员表 / 海报 / 首播日期 / 简介 / 集数
+    if (mediaType === 'tv' && season != null && season !== '') {
+      const seasonDetails = await getSeasonDetails(tmdbId, season);
+      if (seasonDetails) {
+        if (seasonDetails.credits) details.credits = seasonDetails.credits;
+        if (seasonDetails.poster_path) details.poster_path = seasonDetails.poster_path;
+        if (seasonDetails.air_date) details.first_air_date = seasonDetails.air_date;
+        if (seasonDetails.overview && seasonDetails.overview.trim()) details.overview = seasonDetails.overview;
+        const eps = Array.isArray(seasonDetails.episodes) ? seasonDetails.episodes.length : 0;
+        if (eps > 0) details.number_of_episodes = eps;
+      }
+    }
+
     const meta = normalizeDetails(details, mediaType);
     if (!meta) return res.status(404).json({ error: 'TMDB 无详情' });
+
     // 下载海报/背景图到本地（保留原 poster_path/backdrop_path 以便回退远程）
-    const posterLocal = await downloadTmdbImage(meta.poster_path, `${film.id}-poster`);
-    const backdropLocal = await downloadTmdbImage(meta.backdrop_path, `${film.id}-backdrop`);
+    // 若 TMDB 无对应图或下载失败，保留用户已上传的本地图
+    const existing = db.prepare('SELECT poster_local, backdrop_local FROM film_metadata WHERE film_id = ?').get(film.id);
+    const newPosterLocal = await downloadTmdbImage(meta.poster_path, `${film.id}-poster`);
+    const newBackdropLocal = await downloadTmdbImage(meta.backdrop_path, `${film.id}-backdrop`);
+    if (newPosterLocal && existing?.poster_local && existing.poster_local !== newPosterLocal) {
+      try { unlinkSync(join(IMAGES_DIR, existing.poster_local)); } catch {}
+    }
+    if (newBackdropLocal && existing?.backdrop_local && existing.backdrop_local !== newBackdropLocal) {
+      try { unlinkSync(join(IMAGES_DIR, existing.backdrop_local)); } catch {}
+    }
+    const posterLocal = newPosterLocal || existing?.poster_local || null;
+    const backdropLocal = newBackdropLocal || existing?.backdrop_local || null;
     db.prepare(`
       INSERT OR REPLACE INTO film_metadata
         (film_id, imdb_id, tmdb_id, media_type, title, original_title, overview,
@@ -335,6 +389,21 @@ app.delete('/api/films/:id/metadata', (req, res) => {
     }
   }
   db.prepare('DELETE FROM film_metadata WHERE film_id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// ---- 删除整条观影记录（同时删除元数据与本地图片） ----
+app.delete('/api/films/:id', (req, res) => {
+  const film = db.prepare('SELECT id FROM films WHERE id = ?').get(req.params.id);
+  if (!film) return res.status(404).json({ error: 'film not found' });
+  const row = db.prepare('SELECT poster_local, backdrop_local FROM film_metadata WHERE film_id = ?').get(film.id);
+  if (row) {
+    for (const f of [row.poster_local, row.backdrop_local]) {
+      if (f) { try { unlinkSync(join(IMAGES_DIR, f)); } catch {} }
+    }
+  }
+  db.prepare('DELETE FROM film_metadata WHERE film_id = ?').run(film.id);
+  db.prepare('DELETE FROM films WHERE id = ?').run(film.id);
   res.json({ ok: true });
 });
 

@@ -32,12 +32,17 @@ export const createFilm = (data) =>
 export const searchMeta = (q, category) =>
   http(`${BASE}/meta/search?q=${encodeURIComponent(q)}&category=${encodeURIComponent(category || '')}`);
 
-/** 选择 TMDB 候选写入元数据（同时下载图片到本地） */
-export const saveMeta = (filmId, tmdbId, mediaType) =>
+/** 获取某 TMDB TV 剧集的季列表 */
+export const fetchSeasons = (tmdbId) =>
+  http(`${BASE}/meta/seasons?tmdbId=${encodeURIComponent(tmdbId)}`);
+
+/** 选择 TMDB 候选写入元数据（同时下载图片到本地）
+ *  season 仅对 TV 生效，用于填充指定季的元数据 */
+export const saveMeta = (filmId, tmdbId, mediaType, season) =>
   http(`${BASE}/films/${filmId}/metadata`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tmdbId, mediaType }),
+    body: JSON.stringify({ tmdbId, mediaType, season }),
   });
 
 /** 删除元数据（同时删除本地图片） */
@@ -51,6 +56,10 @@ export const updateFilm = (filmId, patch) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   });
+
+/** 删除整条观影记录（同时删除元数据与本地图片） */
+export const deleteFilm = (filmId) =>
+  http(`${BASE}/films/${filmId}`, { method: 'DELETE' });
 
 /** 编辑元数据（title/overview/genres/runtime/vote_average 等） */
 export const updateMeta = (filmId, patch) =>

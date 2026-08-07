@@ -121,6 +121,16 @@ body {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+/* 无元数据筛选卡：警示色，区别于普通分类 */
+.cat-card-no-meta .cat-card-name { color: var(--amber); display: inline-flex; align-items: center; gap: 4px; }
+.cat-card-no-meta .cat-card-count { color: var(--amber); }
+.cat-card-no-meta:hover { border-color: var(--amber); }
+.cat-card-no-meta.active {
+  background: var(--amber);
+  border-color: var(--amber);
+}
+.cat-card-no-meta.active .cat-card-name,
+.cat-card-no-meta.active .cat-card-count { color: #fff; }
 
 /* Filters */
 .filters {
@@ -598,6 +608,9 @@ body {
 .watch-info dd:not(.platform-list) { white-space: nowrap; }
 .watch-info a { color: var(--accent); text-decoration: none; }
 .watch-info a:hover { text-decoration: underline; }
+/* 备注字段：允许长文字换行，独占整行 */
+.watch-info > div:has(.notes-dd) { flex: 1 1 100%; }
+.watch-info dd.notes-dd { white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
 
 /* 影片元数据区 */
 .meta-info {
@@ -775,6 +788,71 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* 季选择面板（多季 TV 剧集） */
+.season-picker {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.season-picker-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.season-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.season-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elev2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px 4px 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.season-option:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-elev);
+}
+.season-option:disabled { opacity: 0.6; cursor: default; }
+.season-option img {
+  width: 28px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.season-option-noimg {
+  width: 28px;
+  aspect-ratio: 2 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--border);
+  color: var(--text-dim);
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.season-option-name { font-weight: 500; white-space: nowrap; }
+.season-option-meta { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.season-option-all {
+  border-color: var(--accent);
+  background: var(--bg-elev);
+}
+.season-option-all .season-option-name { color: var(--accent); }
+.season-cancel { margin-top: 8px; }
 
 /* ---- SVG 图标 ---- */
 .icon {

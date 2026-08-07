@@ -175,6 +175,11 @@ export default function App() {
             loadFilms();
             fetchStats().then(setStats).catch(() => {});
           }}
+          onDelete={() => {
+            setSelectedFilm(null);
+            loadFilms();
+            fetchStats().then(setStats).catch(() => {});
+          }}
         />
       )}
 
@@ -237,6 +242,8 @@ function AddFilmModal({ onClose, onCreated }) {
 
 function CategoryBreakdown({ stats, active, onSelect }) {
   const total = stats.total;
+  const noMetaCount = stats.withoutMetadata ?? 0;
+  const NO_META = '__no_meta__';
   return (
     <div className="cat-cards">
       <button
@@ -248,6 +255,17 @@ function CategoryBreakdown({ stats, active, onSelect }) {
         <span className="cat-card-name">全部</span>
         <span className="cat-card-count">{total}</span>
       </button>
+      {noMetaCount > 0 && (
+        <button
+          type="button"
+          className={`cat-card cat-card-no-meta${active === NO_META ? ' active' : ''}`}
+          onClick={() => onSelect(NO_META)}
+          title={`无元数据: ${noMetaCount} 部`}
+        >
+          <span className="cat-card-name"><Icon name="alert" size={13} /> 无元数据</span>
+          <span className="cat-card-count">{noMetaCount}</span>
+        </button>
+      )}
       {stats.byCategory.map((x) => (
         <button
           type="button"

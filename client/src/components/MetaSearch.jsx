@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { searchMeta, saveMeta } from '../api.js';
+import { searchMeta, saveMeta, fetchSeasons } from '../api.js';
 import Icon from './Icon.jsx';
 
 export default function MetaSearch({ film, onClose, onSaved }) {
@@ -10,11 +10,14 @@ export default function MetaSearch({ film, onClose, onSaved }) {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(null); // 正在保存的候选 key
   const [configured, setConfigured] = useState(true);
+  // 季选择面板：{ key, loading, seasons } 或 null
+  const [seasonPicker, setSeasonPicker] = useState(null);
 
   const run = async () => {
     if (!query.trim()) return;
     setLoading(true);
     setError(null);
+    setSeasonPicker(null);
     try {
       const data = await searchMeta(query, category);
       setConfigured(data.configured !== false);
@@ -27,18 +30,49 @@ export default function MetaSearch({ film, onClose, onSaved }) {
     }
   };
 
-  const pick = async (r) => {
+  const doSave = async (r, season) => {
     const key = `${r.media_type}:${r.tmdb_id}`;
     setSaving(key);
     setError(null);
     try {
-      await saveMeta(film.id, r.tmdb_id, r.media_type);
+      await saveMeta(film.id, r.tmdb_id, r.media_type, season);
       onSaved();
     } catch (e) {
       setError(e.message);
     } finally {
       setSaving(null);
     }
+  };
+
+  const pick = async (r) => {
+    // 电影：直接保存
+    if (r.media_type !== 'tv') {
+      doSave(r, undefined);
+      return;
+    }
+    // TV：先拉取季列表
+    const key = `${r.media_type}:${r.tmdb_id}`;
+    setSeasonPicker({ key, loading: true, seasons: [] });
+    setError(null);
+    try {
+      const data = await fetchSeasons(r.tmdb_id);
+      const seasons = data.seasons || [];
+      // 仅 1 季（或无季）时直接保存
+      if (seasons.length <= 1) {
+        setSeasonPicker(null);
+        doSave(r, seasons[0]?.season_number);
+        return;
+      }
+      setSeasonPicker({ key, loading: false, seasons });
+    } catch (e) {
+      setError(e.message);
+      setSeasonPicker(null);
+    }
+  };
+
+  const pickSeason = (r, seasonNumber) => {
+    setSeasonPicker(null);
+    doSave(r, seasonNumber);
   };
 
   return (
@@ -83,6 +117,8 @@ export default function MetaSearch({ film, onClose, onSaved }) {
           )}
           {results.map((r) => {
             const key = `${r.media_type}:${r.tmdb_id}`;
+            const pickerKey = seasonPicker?.key;
+            const isPicking = pickerKey === key;
             return (
               <div className="result-item" key={key}>
                 <div className="result-poster">
@@ -104,14 +140,74 @@ export default function MetaSearch({ film, onClose, onSaved }) {
                     <div className="result-orig">{r.original_title}</div>
                   )}
                   <div className="result-overview">{r.overview || '暂无简介'}</div>
+                  {isPicking && (
+                    <div className="season-picker">
+                      {seasonPicker.loading ? (
+                        <div className="season-picker-hint">正在获取季列表…</div>
+                      ) : (
+                        <>
+                          <div className="season-picker-hint">
+                            该剧共 {seasonPicker.seasons.length} 季，请选择填充方式：
+                          </div>
+                          <div className="season-list">
+                            <button
+                              type="button"
+                              className="season-option season-option-all"
+                              disabled={saving === key}
+                              onClick={() => pickSeason(r, undefined)}
+                              title="使用全剧总元数据（不指定季）"
+                            >
+                              <span className="season-option-noimg">
+                                <Icon name="info" size={14} />
+                              </span>
+                              <span className="season-option-name">全剧总览</span>
+                              <span className="season-option-meta">不指定季</span>
+                            </button>
+                            {seasonPicker.seasons.map((s) => (
+                              <button
+                                key={s.season_number}
+                                type="button"
+                                className="season-option"
+                                disabled={saving === key}
+                                onClick={() => pickSeason(r, s.season_number)}
+                                title={s.overview || ''}
+                              >
+                                {s.posterUrl ? (
+                                  <img src={s.posterUrl} alt="" loading="lazy" />
+                                ) : (
+                                  <span className="season-option-noimg">
+                                    <Icon name="image" size={14} />
+                                  </span>
+                                )}
+                                <span className="season-option-name">{s.name}</span>
+                                <span className="season-option-meta">
+                                  {s.year || '—'}{s.episode_count > 0 ? ` · ${s.episode_count} 集` : ''}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-secondary small season-cancel"
+                            disabled={saving === key}
+                            onClick={() => setSeasonPicker(null)}
+                          >
+                            取消
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <button
-                  className="btn-primary small"
-                  disabled={saving === key}
-                  onClick={() => pick(r)}
-                >
-                  {saving === key ? '保存中…' : '选择'}
-                </button>
+                {!isPicking && (
+                  <button
+                    className="btn-primary small"
+                    disabled={saving === key}
+                    onClick={() => pick(r)}
+                  >
+                    {saving === key ? '保存中…' : '选择'}
+                  </button>
+                )}
               </div>
             );
           })}

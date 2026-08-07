@@ -17,7 +17,7 @@ export default function FilmCard({ film, onClick }) {
             <span className="ph-name">{film.name}</span>
           </div>
         )}
-        {!meta && (
+        {!film.hasMetadata && (
           <span className="no-meta-badge" title="未刮削元数据">
             <Icon name="alert" size={11} /> 无元数据
           </span>
