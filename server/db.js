@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS films (
   category            TEXT,                       -- 类别
   name                TEXT NOT NULL,              -- 名称
   imdb_id             TEXT,                       -- IMDb 号（已规范化，缺失为 NULL）
+  douban_id           TEXT,                       -- 豆瓣条目 ID（用户手动填写）
   production_countries_raw TEXT,                  -- 制片国家原始字段（按 "/" 分割）
   release_year        INTEGER,                    -- 上映年份
   start_date          TEXT,                       -- 开始观看日期 (ISO YYYY-MM-DD)
@@ -78,7 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_films_category ON films(category);
 
 db.exec(SCHEMA);
 
-// 兼容旧库：补齐新增列
+// 兼容旧库：补齐 film_metadata 新增列
 const cols = db.prepare("PRAGMA table_info(film_metadata)").all();
 const names = new Set(cols.map((c) => c.name));
 for (const col of [
@@ -93,6 +94,25 @@ for (const col of [
       col === 'budget' || col === 'revenue') ? 'INTEGER' : 'TEXT';
     db.exec(`ALTER TABLE film_metadata ADD COLUMN ${col} ${type};`);
   }
+}
+
+// 兼容旧库：补齐 films.douban_id 列
+const filmCols = db.prepare("PRAGMA table_info(films)").all();
+const filmColNames = new Set(filmCols.map((c) => c.name));
+if (!filmColNames.has('douban_id')) {
+  db.exec('ALTER TABLE films ADD COLUMN douban_id TEXT;');
+}
+// 若旧库 film_metadata 仍存在 douban_id 列：先把数据回填到 films，再删除该列（幂等）
+const metaHasDouban = db.prepare("SELECT 1 FROM pragma_table_info('film_metadata') WHERE name = ?").get('douban_id');
+if (metaHasDouban) {
+  // 仅回填 films.douban_id 为 NULL 的行
+  db.exec(`
+    UPDATE films SET douban_id = (
+      SELECT m.douban_id FROM film_metadata m WHERE m.film_id = films.id
+    ) WHERE douban_id IS NULL;
+  `);
+  // 物理删除 film_metadata.douban_id 列（SQLite 3.35.0+）
+  db.exec('ALTER TABLE film_metadata DROP COLUMN douban_id;');
 }
 
 export default db;

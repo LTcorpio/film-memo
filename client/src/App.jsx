@@ -7,16 +7,30 @@ import Filters from './components/Filters.jsx';
 import FilmCard from './components/FilmCard.jsx';
 import FilmDetail from './components/FilmDetail.jsx';
 import FilmForm, { emptyFilmForm, filmFormToPatch } from './components/FilmForm.jsx';
-import Paginator, { DEFAULT_ROWS } from './components/Paginator.jsx';
+import Paginator, { DEFAULT_ROWS, DEFAULT_LIST_SIZE } from './components/Paginator.jsx';
 import Icon from './components/Icon.jsx';
 import ContextMenu from './components/ContextMenu.jsx';
 import ConfirmDialog from './components/ConfirmDialog.jsx';
+import FilmList from './components/FilmList.jsx';
+import RatingManager from './components/RatingManager.jsx';
 
 const ROWS_KEY = 'film-memo:rows-per-page';
+const VIEW_KEY = 'film-memo:view-mode';
+const LIST_SIZE_KEY = 'film-memo:list-size';
 
 function loadRows() {
   const v = Number(localStorage.getItem(ROWS_KEY));
   return Number.isFinite(v) && v > 0 ? v : DEFAULT_ROWS;
+}
+
+function loadViewMode() {
+  const v = localStorage.getItem(VIEW_KEY);
+  return v === 'list' ? 'list' : 'grid';
+}
+
+function loadListSize() {
+  const v = Number(localStorage.getItem(LIST_SIZE_KEY));
+  return Number.isFinite(v) && v > 0 ? v : DEFAULT_LIST_SIZE;
 }
 
 export default function App() {
@@ -35,13 +49,24 @@ export default function App() {
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState(null);
   const [addingFilm, setAddingFilm] = useState(false);
+  const [ratingsOpen, setRatingsOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState(loadRows);
   const [cols, setCols] = useState(1);
+  const [viewMode, setViewMode] = useState(loadViewMode);
+  const [listSize, setListSize] = useState(loadListSize);
   const gridRef = useRef(null);
 
   // 测量影片网格的列数（auto-fill 随视口变化）
+  // 依赖说明：
+  //  - viewMode：切回海报模式时重测
+  //  - loading：影片加载完成、film-grid 实际挂载后才有 gridRef.current 可测。
+  //    初次 mount 时 loading=true，网格未渲染、ref 为空会提前 return，cols 停在 1，
+  //    导致 pageSize = rows*1（「2行」变「2条」）。loading 翻 false 后重跑此处即可修复。
+  //    cols 一旦测得正确值即稳定（auto-fill 仅随视口变化，由 ResizeObserver 监听），
+  //    改 rows 无需重测，pageSize = rows * cols 自然正确。
   useEffect(() => {
+    if (viewMode !== 'grid') return;
     const el = gridRef.current;
     if (!el) return;
     const measure = () => {
@@ -53,10 +78,10 @@ export default function App() {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [viewMode, loading]);
 
   // 弹窗打开期间锁定背景滚动
-  const modalOpen = Boolean(selectedFilm || addingFilm || contextMenu || confirmState);
+  const modalOpen = Boolean(selectedFilm || addingFilm || contextMenu || confirmState || ratingsOpen);
   useEffect(() => {
     if (!modalOpen) return;
     const prev = document.body.style.overflow;
@@ -64,7 +89,21 @@ export default function App() {
     return () => { document.body.style.overflow = prev; };
   }, [modalOpen]);
 
-  const pageSize = Math.max(1, rows * cols);
+  const pageSize = viewMode === 'list' ? listSize : Math.max(1, rows * cols);
+
+  // 切换显示模式：持久化并回到第一页
+  const changeViewMode = (m) => {
+    setViewMode(m);
+    try { localStorage.setItem(VIEW_KEY, m); } catch {}
+    setPage(1);
+  };
+
+  // 列表模式改变每页条数：持久化并回到第一页
+  const changeListSize = (n) => {
+    setListSize(n);
+    try { localStorage.setItem(LIST_SIZE_KEY, String(n)); } catch {}
+    setPage(1);
+  };
 
   // 加载筛选项 & 统计（仅一次）
   useEffect(() => {
@@ -92,15 +131,17 @@ export default function App() {
     [filters]
   );
 
-  // 筛选条件变化时回到第一页
+  // 筛选条件变化时回到第一页，并立即标记加载中避免显示旧数据闪烁
   const updateFilters = (next) => {
     setPage(1);
     setFilters(next);
+    setLoading(true);
   };
 
   const resetFilters = () => {
     setPage(1);
     setFilters({ watchYear: '', releaseYear: '', platform: '', category: '', q: '' });
+    setLoading(true);
   };
 
   // 改变每页行数：持久化并回到第一页
@@ -242,33 +283,66 @@ export default function App() {
         onReset={resetFilters}
         options={filterOpts}
         activeCount={activeFilterCount}
+        onOpenRatings={() => setRatingsOpen(true)}
       />
 
       {error && <div className="error-banner"><Icon name="alert" size={16} /> {error.message}</div>}
 
       <div className="results-meta">
-        {loading
-          ? '加载中…'
-          : films.length === 0
-            ? '无匹配记录'
-            : `第 ${effectivePage}/${pageCount || 1} 页 · 每页 ${pageSize} 条 · 共 ${films.length} 条结果`}
+        <span>
+          {loading
+            ? '加载中…'
+            : films.length === 0
+              ? '无匹配记录'
+              : `第 ${effectivePage}/${pageCount || 1} 页 · 每页 ${pageSize} 条 · 共 ${films.length} 条结果`}
+        </span>
+        <div className="view-toggle" role="group" aria-label="显示模式">
+          <button
+            type="button"
+            className={viewMode === 'grid' ? 'active' : ''}
+            onClick={() => changeViewMode('grid')}
+            title="海报模式"
+          >
+            <Icon name="grid" size={15} />
+          </button>
+          <button
+            type="button"
+            className={viewMode === 'list' ? 'active' : ''}
+            onClick={() => changeViewMode('list')}
+            title="列表模式"
+          >
+            <Icon name="list" size={15} />
+          </button>
+        </div>
       </div>
 
-      <div className="film-grid" ref={gridRef}>
-        {pagedFilms.map((f) => (
-          <FilmCard
-            key={f.id}
-            film={f}
-            onClick={() => {
-              setDetailInitial({ editing: false, metaOpen: false });
-              setSelectedFilm(f);
-            }}
-            onContextMenu={(e) => handleCardContextMenu(e, f)}
-          />
-        ))}
-      </div>
-      {!loading && films.length === 0 && (
+      {loading ? (
+        <div className="grid-loading">加载中…</div>
+      ) : films.length === 0 ? (
         <div className="empty">无匹配记录</div>
+      ) : viewMode === 'grid' ? (
+        <div className="film-grid" ref={gridRef}>
+          {pagedFilms.map((f) => (
+            <FilmCard
+              key={f.id}
+              film={f}
+              onClick={() => {
+                setDetailInitial({ editing: false, metaOpen: false });
+                setSelectedFilm(f);
+              }}
+              onContextMenu={(e) => handleCardContextMenu(e, f)}
+            />
+          ))}
+        </div>
+      ) : (
+        <FilmList
+          films={pagedFilms}
+          onClick={(f) => {
+            setDetailInitial({ editing: false, metaOpen: false });
+            setSelectedFilm(f);
+          }}
+          onContextMenu={handleCardContextMenu}
+        />
       )}
 
       <Paginator
@@ -278,6 +352,9 @@ export default function App() {
         rows={rows}
         onRowsChange={changeRows}
         total={films.length}
+        mode={viewMode}
+        listSize={listSize}
+        onListSizeChange={changeListSize}
       />
 
       {selectedFilm && (
@@ -327,6 +404,23 @@ export default function App() {
         onConfirm={runConfirm}
         onCancel={() => { setConfirmState(null); setConfirmError(null); }}
       />
+
+      {ratingsOpen && (
+        <RatingManager
+          films={films}
+          filters={filters}
+          onClose={() => {
+            setRatingsOpen(false);
+            // 关闭时刷新列表，保证下次打开与详情弹窗的豆瓣 ID 一致
+            loadFilms();
+            fetchStats().then(setStats).catch(() => {});
+          }}
+          onChanged={() => {
+            loadFilms();
+            fetchStats().then(setStats).catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }

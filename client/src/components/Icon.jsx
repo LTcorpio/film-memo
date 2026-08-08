@@ -143,6 +143,26 @@ const PATHS = {
       <line x1="3" y1="10" x2="21" y2="10" />
     </>
   ),
+  // 海报网格模式
+  grid: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  // 列表模式
+  list: (
+    <>
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <circle cx="3.5" cy="6" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="3.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="3.5" cy="18" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
 };
 
 const FILLED = new Set(['star']);

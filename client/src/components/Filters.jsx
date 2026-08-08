@@ -1,4 +1,6 @@
-export default function Filters({ value, onChange, onReset, options, activeCount }) {
+import Icon from './Icon.jsx';
+
+export default function Filters({ value, onChange, onReset, options, activeCount, onOpenRatings }) {
   const set = (k, v) => onChange({ ...value, [k]: v });
 
   return (
@@ -49,6 +51,15 @@ export default function Filters({ value, onChange, onReset, options, activeCount
             清除筛选 ({activeCount})
           </button>
         )}
+
+        <button
+          type="button"
+          className="btn-ratings"
+          onClick={onOpenRatings}
+          title="评分管理：批量维护豆瓣 ID 与评分数据源"
+        >
+          <Icon name="star" size={14} /> 评分管理
+        </button>
       </div>
     </div>
   );

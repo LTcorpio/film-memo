@@ -94,6 +94,7 @@ function shapeFilm(row) {
     category: row.category,
     name: row.name,
     imdbId: row.imdb_id,
+    doubanId: row.douban_id,
     releaseYear: row.release_year,
     startDate: row.start_date,
     endDate: row.end_date,
@@ -413,7 +414,7 @@ app.post('/api/films', (req, res) => {
   if (!b.name || !String(b.name).trim()) {
     return res.status(400).json({ error: '名称不能为空' });
   }
-  const allowed = ['watch_year', 'category', 'name', 'imdb_id', 'production_countries_raw',
+  const allowed = ['watch_year', 'category', 'name', 'imdb_id', 'douban_id', 'production_countries_raw',
     'release_year', 'start_date', 'end_date', 'total_episodes', 'platforms_raw', 'location', 'notes'];
   const params = {};
   for (const k of allowed) {
@@ -432,7 +433,7 @@ app.post('/api/films', (req, res) => {
 app.put('/api/films/:id', (req, res) => {
   const film = db.prepare('SELECT id FROM films WHERE id = ?').get(req.params.id);
   if (!film) return res.status(404).json({ error: 'film not found' });
-  const allowed = ['watch_year', 'category', 'name', 'imdb_id', 'production_countries_raw',
+  const allowed = ['watch_year', 'category', 'name', 'imdb_id', 'douban_id', 'production_countries_raw',
     'release_year', 'start_date', 'end_date', 'total_episodes', 'platforms_raw', 'location', 'notes'];
   const sets = [];
   const params = {};
@@ -495,6 +496,52 @@ app.delete('/api/films/:id/image', (req, res) => {
   if (row?.f) { try { unlinkSync(join(IMAGES_DIR, row.f)); } catch {} }
   db.prepare(`UPDATE film_metadata SET ${type}_local = NULL WHERE film_id = ?`).run(film.id);
   res.json({ ok: true });
+});
+
+// ---- 一键刷新评分数据（按当前筛选条件批量重抓 TMDB vote_average / vote_count） ----
+// 豆瓣评分数据源尚未开发，现阶段仅刷新 TMDB 评分。
+app.post('/api/ratings/refresh', async (req, res) => {
+  if (!tmdbConfigured()) {
+    return res.status(400).json({ error: 'TMDB 未配置' });
+  }
+  // 允许通过 query 或 body 传入筛选条件
+  const f = { ...req.query, ...req.body };
+  const where = [];
+  const params = [];
+  if (f.watchYear) { where.push('f.watch_year = ?'); params.push(Number(f.watchYear)); }
+  if (f.releaseYear) { where.push('f.release_year = ?'); params.push(Number(f.releaseYear)); }
+  if (f.category === '__no_meta__') {
+    where.push('m.tmdb_id IS NULL');
+  } else if (f.category) {
+    where.push('f.category = ?'); params.push(f.category);
+  }
+  if (f.platform) {
+    where.push("(',' || f.platforms_raw || ',') LIKE ? COLLATE NOCASE");
+    params.push(`%,${f.platform},%`);
+  }
+  if (f.q) { where.push('f.name LIKE ? COLLATE NOCASE'); params.push(`%${f.q}%`); }
+
+  const rows = db.prepare(`SELECT f.id, f.name, m.tmdb_id AS tmdb, m.media_type AS mt
+    FROM films f LEFT JOIN film_metadata m ON m.film_id = f.id
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`).all(...params);
+
+  const summary = { total: rows.length, updated: 0, skipped: 0, failed: 0, errors: [] };
+  const upd = db.prepare('UPDATE film_metadata SET vote_average = ?, vote_count = ?, updated_at = ? WHERE film_id = ?');
+  for (const r of rows) {
+    if (!r.tmdb || !r.mt) { summary.skipped++; continue; }
+    try {
+      const details = await getDetails(r.tmdb, r.mt);
+      if (!details) { summary.skipped++; continue; }
+      const voteAverage = details.vote_average ?? null;
+      const voteCount = details.vote_count ?? null;
+      upd.run(voteAverage, voteCount, new Date().toISOString(), r.id);
+      summary.updated++;
+    } catch (e) {
+      summary.failed++;
+      if (summary.errors.length < 10) summary.errors.push({ id: r.id, name: r.name, error: e.message });
+    }
+  }
+  res.json(summary);
 });
 
 // ---- 生产环境托管前端 ----

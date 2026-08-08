@@ -180,13 +180,43 @@ body {
 
 /* Results */
 .results-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   color: var(--text-dim);
   margin-bottom: 12px;
 }
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  background: transparent;
+  color: var(--text-dim);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.view-toggle button:hover { background: var(--bg-elev); color: var(--text); }
+.view-toggle button.active { background: var(--accent); color: #fff; }
 .empty {
   text-align: center;
   color: var(--text-dim);
   padding: 60px 0;
+}
+.grid-loading {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px 0;
+  font-size: 14px;
 }
 
 /* Paginator */
@@ -244,8 +274,12 @@ body {
 }
 .page-btn.icon-btn { padding: 0; }
 .page-ellipsis {
+  min-width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-dim);
-  padding: 0 4px;
   user-select: none;
 }
 .page-size,
@@ -265,22 +299,29 @@ body {
 }
 .page-jump input {
   width: 56px;
+  height: 36px;
   background: var(--bg-elev2);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 0 8px;
   font-size: 13px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
 }
-.page-jump input::-webkit-inner-spin-button { opacity: 0.4; }
+.page-jump input::-webkit-outer-spin-button,
+.page-jump input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 .page-jump-btn {
+  height: 36px;
   background: var(--bg-elev2);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 6px 12px;
+  padding: 0 12px;
   font-size: 13px;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
@@ -385,6 +426,134 @@ body {
   padding: 2px 7px;
   border-radius: 4px;
 }
+
+/* ===== 列表模式（表格） ===== */
+.film-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: auto;
+  background: var(--bg-elev);
+}
+.film-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+.film-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg-elev2);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.film-table td {
+  text-align: left;
+  vertical-align: middle;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+}
+.film-table tbody tr:last-child td { border-bottom: none; }
+.film-table tbody tr { cursor: pointer; transition: background 0.15s; }
+.film-table tbody tr:hover { background: var(--bg-elev2); }
+
+/* 第一列：海报（居中） */
+.col-poster { width: 1%; white-space: nowrap; text-align: center !important; }
+.film-table th.col-poster, .film-table td.col-poster { text-align: center !important; }
+.row-poster {
+  width: 36px;
+  height: 52px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-elev2);
+}
+.row-poster img { width: 100%; height: 100%; object-fit: cover; }
+.row-poster .poster-placeholder.mini { padding: 4px; gap: 0; inset: 0; position: relative; }
+.row-poster .poster-placeholder.mini .ph-name { font-size: 9px; line-height: 1.1; }
+
+/* 第二列：名称 + 类别/年份/集数 */
+.col-title { min-width: 140px; }
+.row-title {
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.row-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+.row-cat {
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+.row-year, .row-ep { font-size: 11px; color: var(--text-dim); }
+
+/* 第三列：IMDb */
+.col-imdb { white-space: nowrap; }
+.row-imdb {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.row-imdb:hover { text-decoration: underline; }
+
+/* 第四列：评分 */
+.col-rating { white-space: nowrap; }
+.row-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber);
+}
+
+/* 第五列：观看平台 */
+.col-platforms { min-width: 80px; }
+.row-platforms {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* 第六列：观看日期 */
+.col-date { white-space: nowrap; }
+.row-date-lines { display: flex; flex-direction: column; gap: 2px; line-height: 1.4; }
+.row-date-item { display: inline-flex; align-items: center; gap: 5px; }
+.date-tag {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+.date-tag.start { color: #6ee7a0; border-color: rgba(110, 231, 160, 0.4); }
+.date-tag.end { color: var(--amber); border-color: rgba(255, 191, 87, 0.4); }
+.date-tag.placeholder { color: var(--text-dim); opacity: 0.5; }
+
+/* 占位符 */
+.row-dim { color: var(--text-dim); font-size: 12px; }
 
 .card-body { padding: 10px 12px 12px; }
 .card-line1 {
@@ -1089,6 +1258,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   .header-actions { width: 100%; justify-content: space-between; }
   .meta-info > div { flex-direction: column; gap: 2px; }
   .meta-info dt { width: auto; }
+  /* 列表模式窄屏隐藏 IMDb 列 */
+  .col-imdb { display: none; }
 }
 
 /* ---- 右键上下文菜单 ---- */
@@ -1202,3 +1373,92 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-danger.solid:hover:not(:disabled) {
   background: #e54545;
 }
+
+/* 评分管理入口按钮：置于筛选行最右侧 */
+.btn-ratings {
+  margin-left: auto;
+  background: var(--bg-elev2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-ratings:hover { background: #2d3242; border-color: var(--accent); }
+
+/* Rating manager modal */
+.rating-manager { max-width: 820px; padding: 24px; }
+.rating-manager h3 { margin: 0 0 6px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+.rating-manager-sub { color: var(--text-dim); font-size: 12px; margin-bottom: 16px; line-height: 1.6; }
+.rating-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.rating-result { color: var(--text-dim); font-size: 12px; }
+.rating-result.err { color: #ffd5d5; display: inline-flex; align-items: center; gap: 4px; }
+
+.rating-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 56vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.rating-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  flex-wrap: wrap;
+}
+.rating-row-info { flex: 1; min-width: 180px; }
+.rating-row-title { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rating-row-imdb {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-weight: 400;
+}
+.rating-row-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.rating-row-cat { font-size: 11px; color: var(--text-dim); }
+.rating-source-badge {
+  font-size: 11px;
+  border-radius: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+}
+.rating-source-badge.tmdb { color: var(--text-dim); background: var(--bg); }
+.rating-source-badge.douban { color: #fff; background: #258ecd; border-color: #258ecd; }
+.rating-row-input { flex: 0 1 200px; min-width: 140px; }
+.rating-row-input input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.rating-row-input input:focus { outline: none; border-color: var(--accent); }
+.rating-row-err {
+  flex: 1 1 100%;
+  color: #ffd5d5;
+  font-size: 12px;
+}
+
+/* 观看记录中的豆瓣链接：豆瓣蓝 */
+.watch-info a.douban-link { color: #258ecd; }
+.watch-info a.douban-link:hover { color: #3a9fdf; }

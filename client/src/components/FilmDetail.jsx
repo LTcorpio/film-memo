@@ -458,6 +458,21 @@ export default function FilmDetail({
                       </dd>
                     </div>
                   )}
+                  {film.doubanId && (
+                    <div>
+                      <dt>豆瓣</dt>
+                      <dd>
+                        <a
+                          href={`https://movie.douban.com/subject/${film.doubanId}/`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="douban-link"
+                        >
+                          {film.doubanId} <Icon name="external" size={11} />
+                        </a>
+                      </dd>
+                    </div>
+                  )}
                 </dl>
                 {film.notes && (
                   <dl className="watch-info">

@@ -46,9 +46,14 @@ export default function FilmForm({ value, onChange }) {
       <label>观看地点
         <input value={value.location || ''} onChange={(e) => set('location', e.target.value)} />
       </label>
-      <label>IMDb 号
-        <input value={value.imdbId || ''} onChange={(e) => set('imdbId', e.target.value || null)} />
-      </label>
+      <div className="form-row">
+        <label>IMDb 号
+          <input value={value.imdbId || ''} onChange={(e) => set('imdbId', e.target.value || null)} />
+        </label>
+        <label>豆瓣 ID
+          <input value={value.doubanId || ''} placeholder="如 1292052" onChange={(e) => set('doubanId', e.target.value)} />
+        </label>
+      </div>
       <label>备注
         <textarea rows={2} value={value.notes || ''} onChange={(e) => set('notes', e.target.value)} />
       </label>
@@ -70,6 +75,7 @@ export function emptyFilmForm() {
     productionCountriesRaw: '',
     location: '',
     imdbId: '',
+    doubanId: '',
     notes: '',
   };
 }
@@ -88,6 +94,7 @@ export function filmFormToPatch(f) {
     production_countries_raw: f.productionCountriesRaw || null,
     location: f.location || null,
     imdb_id: f.imdbId || null,
+    douban_id: f.doubanId?.trim() || null,
     notes: f.notes || null,
   };
 }
@@ -106,6 +113,7 @@ export function filmToForm(film) {
     productionCountriesRaw: film.productionCountriesRaw || '',
     location: film.location,
     imdbId: film.imdbId,
+    doubanId: film.doubanId,
     notes: film.notes,
   };
 }

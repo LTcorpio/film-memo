@@ -85,3 +85,12 @@ export const scrapeImage = (filmId, type) =>
 /** 删除本地图片，回退到远程 TMDB 图 */
 export const deleteImage = (filmId, type) =>
   http(`${BASE}/films/${filmId}/image?type=${type}`, { method: 'DELETE' });
+
+/** 一键刷新评分数据（按当前筛选条件批量重抓 TMDB 评分）
+ *  豆瓣评分数据源尚未开发，现阶段仅刷新 TMDB。 */
+export const refreshRatings = (filters) =>
+  http(`${BASE}/ratings/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(filters || {}),
+  });
