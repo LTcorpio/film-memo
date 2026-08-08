@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  saveMeta, deleteMeta, updateFilm, updateMeta,
-  uploadImage, scrapeImage, deleteImage, deleteFilm,
+  updateFilm, updateMeta,
+  uploadImage, scrapeImage, deleteImage,
 } from '../api.js';
 import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
@@ -266,34 +266,30 @@ function ImageTools({ filmId, type, label, hasLocal, hasRemote, onChanged, onErr
   );
 }
 
-export default function FilmDetail({ film, onClose, onChanged, onDelete }) {
-  const [metaOpen, setMetaOpen] = useState(false);
+export default function FilmDetail({
+  film, onClose, onChanged,
+  initialEditing = false, initialMetaOpen = false,
+}) {
+  const [metaOpen, setMetaOpen] = useState(initialMetaOpen);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const [editing, setEditing] = useState(false);
-  const [filmForm, setFilmForm] = useState(null);
-  const [metaForm, setMetaForm] = useState(null);
+  const [editing, setEditing] = useState(initialEditing);
+  const [filmForm, setFilmForm] = useState(() => initialEditing ? filmToForm(film) : null);
+  const [metaForm, setMetaForm] = useState(() => initialEditing ? {
+    title: film.metadata?.title || '',
+    originalTitle: film.metadata?.originalTitle || '',
+    genres: (film.metadata?.genres || []).join(', '),
+    runtime: film.metadata?.runtime ?? '',
+    voteAverage: film.metadata?.voteAverage ?? '',
+    mediaType: film.metadata?.mediaType || '',
+    overview: film.metadata?.overview || '',
+    directors: (film.metadata?.directors || []).join(', '),
+    cast: (film.metadata?.cast || []).join(', '),
+    releaseDate: film.metadata?.releaseDate || '',
+    status: film.metadata?.status || '',
+    tagline: film.metadata?.tagline || '',
+  } : null);
   const meta = film.metadata;
-
-  const startEdit = () => {
-    setEditing(true);
-    setErr(null);
-    setFilmForm(filmToForm(film));
-    setMetaForm({
-      title: meta?.title || '',
-      originalTitle: meta?.originalTitle || '',
-      genres: (meta?.genres || []).join(', '),
-      runtime: meta?.runtime ?? '',
-      voteAverage: meta?.voteAverage ?? '',
-      mediaType: meta?.mediaType || '',
-      overview: meta?.overview || '',
-      directors: (meta?.directors || []).join(', '),
-      cast: (meta?.cast || []).join(', '),
-      releaseDate: meta?.releaseDate || '',
-      status: meta?.status || '',
-      tagline: meta?.tagline || '',
-    });
-  };
 
   const cancelEdit = () => {
     setEditing(false);
@@ -332,34 +328,6 @@ export default function FilmDetail({ film, onClose, onChanged, onDelete }) {
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm('确定删除该影片的元数据？')) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      await deleteMeta(film.id);
-      onChanged();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDeleteFilm = async () => {
-    if (!confirm(`确定删除观影记录「${film.name}」？该操作将同时删除其元数据与本地图片，且不可恢复。`)) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      await deleteFilm(film.id);
-      onDelete?.();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const dateRange = [film.startDate, film.endDate]
     .filter(Boolean)
     .filter((v, i, a) => a.indexOf(v) === i)
@@ -379,15 +347,21 @@ export default function FilmDetail({ film, onClose, onChanged, onDelete }) {
 
           <div className={`detail-main${editing ? ' edit-layout' : ''}`}>
             {!editing && (
-              <div className="detail-poster">
-                {meta?.posterUrl ? (
-                  <img src={meta.posterUrl} alt={meta.title || film.name} />
-                ) : (
-                  <div className="poster-placeholder big">
-                    <span className="ph-cat">{film.category}</span>
-                    <span className="ph-name">{film.name}</span>
-                  </div>
-                )}
+              <div className="detail-poster-col">
+                <div className="detail-poster">
+                  {meta?.posterUrl ? (
+                    <img src={meta.posterUrl} alt={meta.title || film.name} />
+                  ) : (
+                    <div className="poster-placeholder big">
+                      <span className="ph-cat">{film.category}</span>
+                      <span className="ph-name">{film.name}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="detail-meta-hint">
+                  {meta?.mediaType === 'tv' ? '电视剧' : meta?.mediaType === 'movie' ? '电影' : ''}
+                  {meta?.updatedAt ? ` · 更新于 ${meta.updatedAt.slice(0, 10)}` : ''}
+                </div>
               </div>
             )}
 
@@ -495,48 +469,18 @@ export default function FilmDetail({ film, onClose, onChanged, onDelete }) {
           </div>
         </div>
 
-        {/* 固定底部操作栏 —— 始终可见 */}
-        <div className="detail-footer">
-          {err && <div className="error-banner small"><Icon name="alert" size={14} /> {err}</div>}
-          <div className="meta-actions">
-            {editing ? (
-              <>
-                <button className="btn-primary" disabled={busy} onClick={saveAll}>
-                  <Icon name="save" size={14} /> {busy ? '保存中…' : '保存'}
-                </button>
-                <button className="btn-secondary" disabled={busy} onClick={cancelEdit}>取消</button>
-              </>
-            ) : (
-              <>
-                {!film.hasMetadata && (
-                  <button className="btn-primary" disabled={busy} onClick={() => setMetaOpen(true)}>
-                    <Icon name="search" size={14} /> 搜索填充元数据
-                  </button>
-                )}
-                {film.hasMetadata && (
-                  <>
-                    <button className="btn-secondary" disabled={busy} onClick={() => setMetaOpen(true)}>
-                      <Icon name="refresh" size={14} /> 重新搜索
-                    </button>
-                    <button className="btn-danger" disabled={busy} onClick={handleDelete}>
-                      <Icon name="trash" size={14} /> 删除元数据
-                    </button>
-                  </>
-                )}
-                <button className="btn-secondary" disabled={busy} onClick={startEdit}>
-                  <Icon name="edit" size={14} /> 编辑
-                </button>
-                <button className="btn-danger" disabled={busy} onClick={handleDeleteFilm}>
-                  <Icon name="trash" size={14} /> 删除记录
-                </button>
-                <span className="meta-hint">
-                  {meta?.mediaType === 'tv' ? '电视剧' : meta?.mediaType === 'movie' ? '电影' : ''}
-                  {meta?.updatedAt ? ` · 更新于 ${meta.updatedAt.slice(0, 10)}` : ''}
-                </span>
-              </>
-            )}
+        {/* 编辑模式：底部固定保存/取消栏 */}
+        {editing && (
+          <div className="detail-footer">
+            {err && <div className="error-banner small"><Icon name="alert" size={14} /> {err}</div>}
+            <div className="meta-actions">
+              <button className="btn-primary" disabled={busy} onClick={saveAll}>
+                <Icon name="save" size={14} /> {busy ? '保存中…' : '保存'}
+              </button>
+              <button className="btn-secondary" disabled={busy} onClick={cancelEdit}>取消</button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {metaOpen && (

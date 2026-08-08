@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchFilms, fetchFilters, fetchStats, fetchFilm, createFilm,
+  deleteMeta, deleteFilm,
 } from './api.js';
 import Filters from './components/Filters.jsx';
 import FilmCard from './components/FilmCard.jsx';
@@ -8,6 +9,8 @@ import FilmDetail from './components/FilmDetail.jsx';
 import FilmForm, { emptyFilmForm, filmFormToPatch } from './components/FilmForm.jsx';
 import Paginator, { DEFAULT_ROWS } from './components/Paginator.jsx';
 import Icon from './components/Icon.jsx';
+import ContextMenu from './components/ContextMenu.jsx';
+import ConfirmDialog from './components/ConfirmDialog.jsx';
 
 const ROWS_KEY = 'film-memo:rows-per-page';
 
@@ -26,6 +29,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedFilm, setSelectedFilm] = useState(null);
+  const [detailInitial, setDetailInitial] = useState({ editing: false, metaOpen: false });
+  const [contextMenu, setContextMenu] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState(null);
   const [addingFilm, setAddingFilm] = useState(false);
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState(loadRows);
@@ -46,6 +54,15 @@ export default function App() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // 弹窗打开期间锁定背景滚动
+  const modalOpen = Boolean(selectedFilm || addingFilm || contextMenu || confirmState);
+  useEffect(() => {
+    if (!modalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [modalOpen]);
 
   const pageSize = Math.max(1, rows * cols);
 
@@ -91,6 +108,96 @@ export default function App() {
     setRows(r);
     try { localStorage.setItem(ROWS_KEY, String(r)); } catch {}
     setPage(1);
+  };
+
+  // 右键菜单
+  const handleCardContextMenu = (e, film) => {
+    e.preventDefault();
+    setContextMenu({ film, x: e.clientX, y: e.clientY });
+  };
+
+  const openDetail = (film, mode) => {
+    setDetailInitial({
+      editing: mode === 'edit',
+      metaOpen: mode === 'scrape',
+    });
+    setSelectedFilm(film);
+    setContextMenu(null);
+  };
+
+  // 危险操作二次确认
+  const requestConfirm = (opts) => {
+    setConfirmError(null);
+    setConfirmState(opts);
+  };
+
+  const runConfirm = async () => {
+    if (!confirmState?.action) return;
+    setConfirmBusy(true);
+    setConfirmError(null);
+    try {
+      await confirmState.action();
+      setConfirmState(null);
+    } catch (e) {
+      setConfirmError(e.message);
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  const refreshAll = (filmId) => {
+    loadFilms();
+    fetchStats().then(setStats).catch(() => {});
+    if (filmId != null && selectedFilm?.id === filmId) {
+      fetchFilm(filmId).then(setSelectedFilm).catch(() => {});
+    }
+  };
+
+  const handleDeleteMeta = (film) => {
+    requestConfirm({
+      title: '删除元数据',
+      message: `确定删除「${film.name}」的元数据？本地图片也将一并删除。`,
+      confirmText: '删除',
+      danger: true,
+      action: async () => {
+        await deleteMeta(film.id);
+        refreshAll(film.id);
+      },
+    });
+  };
+
+  const handleDeleteFilm = (film) => {
+    requestConfirm({
+      title: '删除观影记录',
+      message: `确定删除观影记录「${film.name}」？\n该操作将同时删除其元数据与本地图片，且不可恢复。`,
+      confirmText: '删除',
+      danger: true,
+      action: async () => {
+        await deleteFilm(film.id);
+        if (selectedFilm?.id === film.id) setSelectedFilm(null);
+        refreshAll(film.id);
+      },
+    });
+  };
+
+  const buildContextMenuItems = (film) => {
+    const items = [
+      { type: 'item', label: '刮削元数据', icon: 'search', onClick: () => openDetail(film, 'scrape') },
+      { type: 'item', label: '编辑', icon: 'edit', onClick: () => openDetail(film, 'edit') },
+    ];
+    if (film.hasMetadata) {
+      items.push({ type: 'divider' });
+      items.push({
+        type: 'item', label: '删除元数据', icon: 'trash', danger: true,
+        onClick: () => handleDeleteMeta(film),
+      });
+    }
+    // items.push({ type: 'divider' });
+    items.push({
+      type: 'item', label: '删除记录', icon: 'trash', danger: true,
+      onClick: () => handleDeleteFilm(film),
+    });
+    return items;
   };
 
   const pageCount = Math.ceil(films.length / pageSize);
@@ -149,7 +256,15 @@ export default function App() {
 
       <div className="film-grid" ref={gridRef}>
         {pagedFilms.map((f) => (
-          <FilmCard key={f.id} film={f} onClick={() => setSelectedFilm(f)} />
+          <FilmCard
+            key={f.id}
+            film={f}
+            onClick={() => {
+              setDetailInitial({ editing: false, metaOpen: false });
+              setSelectedFilm(f);
+            }}
+            onContextMenu={(e) => handleCardContextMenu(e, f)}
+          />
         ))}
       </div>
       {!loading && films.length === 0 && (
@@ -169,14 +284,11 @@ export default function App() {
         <FilmDetail
           film={selectedFilm}
           onClose={() => setSelectedFilm(null)}
+          initialEditing={detailInitial.editing}
+          initialMetaOpen={detailInitial.metaOpen}
           onChanged={() => {
             // 刷新列表中的该条记录与统计
             fetchFilm(selectedFilm.id).then(setSelectedFilm).catch(() => {});
-            loadFilms();
-            fetchStats().then(setStats).catch(() => {});
-          }}
-          onDelete={() => {
-            setSelectedFilm(null);
             loadFilms();
             fetchStats().then(setStats).catch(() => {});
           }}
@@ -194,6 +306,27 @@ export default function App() {
           }}
         />
       )}
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={buildContextMenuItems(contextMenu.film)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={Boolean(confirmState)}
+        title={confirmState?.title}
+        message={confirmState?.message}
+        confirmText={confirmState?.confirmText}
+        danger={confirmState?.danger}
+        busy={confirmBusy}
+        error={confirmError}
+        onConfirm={runConfirm}
+        onCancel={() => { setConfirmState(null); setConfirmError(null); }}
+      />
     </div>
   );
 }

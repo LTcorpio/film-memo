@@ -57,12 +57,6 @@ export default function MetaSearch({ film, onClose, onSaved }) {
     try {
       const data = await fetchSeasons(r.tmdb_id);
       const seasons = data.seasons || [];
-      // 仅 1 季（或无季）时直接保存
-      if (seasons.length <= 1) {
-        setSeasonPicker(null);
-        doSave(r, seasons[0]?.season_number);
-        return;
-      }
       setSeasonPicker({ key, loading: false, seasons });
     } catch (e) {
       setError(e.message);
@@ -78,6 +72,12 @@ export default function MetaSearch({ film, onClose, onSaved }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal meta-search" onClick={(e) => e.stopPropagation()}>
+        {loading && (
+          <div className="meta-search-loading">
+            <span className="meta-search-spinner" />
+            <span className="meta-search-loading-text">搜索中…</span>
+          </div>
+        )}
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
         <h3>搜索元数据 — 「{film.name}」</h3>
 
@@ -147,7 +147,9 @@ export default function MetaSearch({ film, onClose, onSaved }) {
                       ) : (
                         <>
                           <div className="season-picker-hint">
-                            该剧共 {seasonPicker.seasons.length} 季，请选择填充方式：
+                            {seasonPicker.seasons.length > 0
+                              ? `该剧共 ${seasonPicker.seasons.length} 季，请选择填充方式：`
+                              : '该剧暂无季数据，请选择填充方式：'}
                           </div>
                           <div className="season-list">
                             <button

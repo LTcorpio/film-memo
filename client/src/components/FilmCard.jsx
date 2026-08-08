@@ -1,13 +1,17 @@
 import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
 
-export default function FilmCard({ film, onClick }) {
+export default function FilmCard({ film, onClick, onContextMenu }) {
   const meta = film.metadata;
   const title = meta?.title || film.name;
   const year = film.releaseYear || meta?.releaseYear || '';
 
   return (
-    <div className="film-card" onClick={onClick}>
+    <div
+      className="film-card"
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+    >
       <div className="poster">
         {meta?.posterUrl ? (
           <img src={meta.posterUrl} alt={title} loading="lazy" />
