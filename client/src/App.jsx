@@ -17,6 +17,7 @@ import RatingManager from './components/RatingManager.jsx';
 const ROWS_KEY = 'film-memo:rows-per-page';
 const VIEW_KEY = 'film-memo:view-mode';
 const LIST_SIZE_KEY = 'film-memo:list-size';
+const THEME_KEY = 'film-memo:theme';
 
 function loadRows() {
   const v = Number(localStorage.getItem(ROWS_KEY));
@@ -31,6 +32,11 @@ function loadViewMode() {
 function loadListSize() {
   const v = Number(localStorage.getItem(LIST_SIZE_KEY));
   return Number.isFinite(v) && v > 0 ? v : DEFAULT_LIST_SIZE;
+}
+
+function loadTheme() {
+  const v = localStorage.getItem(THEME_KEY);
+  return v === 'light' || v === 'dark' || v === 'system' ? v : 'system';
 }
 
 export default function App() {
@@ -55,7 +61,15 @@ export default function App() {
   const [cols, setCols] = useState(1);
   const [viewMode, setViewMode] = useState(loadViewMode);
   const [listSize, setListSize] = useState(loadListSize);
+  const [theme, setTheme] = useState(loadTheme);
   const gridRef = useRef(null);
+
+  // 主题切换：写 data-theme 属性 + 持久化
+  const changeTheme = (t) => {
+    setTheme(t);
+    try { localStorage.setItem(THEME_KEY, t); } catch {}
+    document.documentElement.setAttribute('data-theme', t);
+  };
 
   // 测量影片网格的列数（auto-fill 随视口变化）
   // 依赖说明：
@@ -260,6 +274,32 @@ export default function App() {
                 <span>已刮削元数据 <b>{stats.withMetadata}</b>/{stats.total}</span>
               </>
             )}
+          </div>
+          <div className="theme-toggle" role="group" aria-label="主题切换">
+            <button
+              type="button"
+              className={theme === 'light' ? 'active' : ''}
+              onClick={() => changeTheme('light')}
+              title="亮色主题"
+            >
+              <Icon name="sun" size={15} />
+            </button>
+            <button
+              type="button"
+              className={theme === 'dark' ? 'active' : ''}
+              onClick={() => changeTheme('dark')}
+              title="暗色主题"
+            >
+              <Icon name="moon" size={15} />
+            </button>
+            <button
+              type="button"
+              className={theme === 'system' ? 'active' : ''}
+              onClick={() => changeTheme('system')}
+              title="跟随系统"
+            >
+              <Icon name="monitor" size={15} />
+            </button>
           </div>
           <button className="btn-primary" onClick={() => setAddingFilm(true)}>
             <Icon name="plus" size={14} /> 新增观影记录

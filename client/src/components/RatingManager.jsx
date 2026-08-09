@@ -2,15 +2,19 @@ import { useState } from 'react';
 import { updateFilm, refreshRatings } from '../api.js';
 import Icon from './Icon.jsx';
 
-/** 单行：剧集名称 + IMDb + 豆瓣 ID 输入 + 评分数据源徽标 + 保存按钮 */
+/** 单行：剧集名称 + IMDb 输入 + 豆瓣 ID 输入 + 评分数据源徽标 + 保存按钮 */
 function RatingRow({ film, onSaved }) {
+  const [imdbId, setImdbId] = useState(film.imdbId || '');
   const [doubanId, setDoubanId] = useState(film.doubanId || '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState(null);
 
-  const persistedDoubanId = film.doubanId || '';
-  const dirty = (doubanId || '') !== (persistedDoubanId || '');
+  // 归一化：trim 后空值视为 ''，与 save 的持久化逻辑（trim || null）一致
+  const norm = (v) => (v && v.trim()) || '';
+  const persistedImdbId = norm(film.imdbId);
+  const persistedDoubanId = norm(film.doubanId);
+  const dirty = norm(imdbId) !== persistedImdbId || norm(doubanId) !== persistedDoubanId;
   const source = persistedDoubanId ? 'douban' : 'tmdb';
 
   const save = async () => {
@@ -18,10 +22,13 @@ function RatingRow({ film, onSaved }) {
     setErr(null);
     setSaved(false);
     try {
-      await updateFilm(film.id, { douban_id: doubanId.trim() || null });
+      const payload = {
+        imdb_id: imdbId.trim() || null,
+        douban_id: doubanId.trim() || null,
+      };
+      await updateFilm(film.id, payload);
       setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-      onSaved(film.id, doubanId.trim() || null);
+      onSaved(film.id, payload);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -29,13 +36,18 @@ function RatingRow({ film, onSaved }) {
     }
   };
 
+  // 编辑任一字段：清除已保存状态，按钮恢复为「保存」并按 dirty 启用
+  const editImdb = (v) => { setImdbId(v); setSaved(false); };
+  const editDouban = (v) => { setDoubanId(v); setSaved(false); };
+
+  const onKey = (e) => {
+    if (e.key === 'Enter' && dirty && !saving) save();
+  };
+
   return (
     <div className="rating-row">
       <div className="rating-row-info">
-        <div className="rating-row-title">
-          {film.name}
-          {film.imdbId && <span className="rating-row-imdb">IMDb: {film.imdbId}</span>}
-        </div>
+        <div className="rating-row-title">{film.name}</div>
         <div className="rating-row-meta">
           <span className="rating-row-cat">{film.category || '—'}</span>
           <span className={`rating-source-badge ${source}`}>
@@ -43,23 +55,37 @@ function RatingRow({ film, onSaved }) {
           </span>
         </div>
       </div>
-      <div className="rating-row-input">
-        <input
-          type="text"
-          value={doubanId}
-          onChange={(e) => setDoubanId(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && dirty && !saving && save()}
-          placeholder="豆瓣条目 ID"
-          disabled={saving}
-        />
+      <div className="rating-row-inputs">
+        <label className="rating-field">
+          <span className="rating-field-label">IMDb</span>
+          <input
+            type="text"
+            value={imdbId}
+            onChange={(e) => editImdb(e.target.value)}
+            onKeyDown={onKey}
+            placeholder=""
+            disabled={saving}
+          />
+        </label>
+        <label className="rating-field">
+          <span className="rating-field-label">豆瓣</span>
+          <input
+            type="text"
+            value={doubanId}
+            onChange={(e) => editDouban(e.target.value)}
+            onKeyDown={onKey}
+            placeholder=""
+            disabled={saving}
+          />
+        </label>
       </div>
       <button
         type="button"
         className="btn-primary small"
-        disabled={!dirty || saving}
+        disabled={saved || !dirty || saving}
         onClick={save}
       >
-        {saving ? '保存中…' : saved ? '已保存' : '保存'}
+        {saving ? '保存中…' : saved ? <Icon name="check" size={14} /> : '保存'}
       </button>
       {err && <div className="rating-row-err">{err}</div>}
     </div>
@@ -70,11 +96,11 @@ export default function RatingManager({ films, filters, onClose, onChanged }) {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshErr, setRefreshErr] = useState(null);
   const [refreshResult, setRefreshResult] = useState(null);
-  // 保存后的豆瓣 ID 覆盖层：filmId -> doubanId（用于即时刷新徽标，无需重拉列表）
+  // 保存后的覆盖层：filmId -> { imdbId, doubanId }（用于即时刷新徽标，无需重拉列表）
   const [overrides, setOverrides] = useState({});
 
-  const handleRowSaved = (filmId, doubanId) => {
-    setOverrides((o) => ({ ...o, [filmId]: doubanId }));
+  const handleRowSaved = (filmId, payload) => {
+    setOverrides((o) => ({ ...o, [filmId]: payload }));
   };
 
   const doRefresh = async () => {
@@ -95,8 +121,8 @@ export default function RatingManager({ films, filters, onClose, onChanged }) {
   // 将覆盖层应用到 films，使徽标即时反映刚保存的豆瓣 ID
   const rows = films.map((f) => {
     if (!(f.id in overrides)) return f;
-    const doubanId = overrides[f.id];
-    return { ...f, doubanId: doubanId || null };
+    const { imdbId, doubanId } = overrides[f.id];
+    return { ...f, imdbId: imdbId || null, doubanId: doubanId || null };
   });
 
   return (
@@ -105,7 +131,7 @@ export default function RatingManager({ films, filters, onClose, onChanged }) {
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
         <h3><Icon name="star" size={16} /> 评分管理</h3>
         <div className="rating-manager-sub">
-          共 {films.length} 条记录 · 维护豆瓣 ID 与评分数据源（豆瓣评分数据源暂未开发，现阶段仅可填写并保存豆瓣 ID）
+          共 {films.length} 条记录 · 统一维护 IMDb 号与豆瓣 ID（豆瓣评分数据源暂未开发，现阶段仅可填写并保存豆瓣 ID）
         </div>
 
         <div className="rating-toolbar">

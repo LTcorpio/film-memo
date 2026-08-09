@@ -1,9 +1,36 @@
 import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
 
+const ICON_BASE = '/icon';
+
+/** ID 单行：SVG 图标 + 可点击 ID 文本（跳转外站），Tag 样式按来源着色 */
+function IdLine({ icon, alt, href, value, source }) {
+  if (!value) {
+    return (
+      <span className="row-id-line dim">
+        <img src={`${ICON_BASE}/${icon}`} alt="" width={13} height={13} className="row-id-logo" />
+        <span className="row-id-value">—</span>
+      </span>
+    );
+  }
+  return (
+    <a
+      className={`row-id-line ${source}`}
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      title={`${alt}: ${value}`}
+    >
+      <img src={`${ICON_BASE}/${icon}`} alt={alt} width={13} height={13} className="row-id-logo" />
+      <span className="row-id-value">{value}</span>
+    </a>
+  );
+}
+
 /**
  * 列表模式：表格样式，每部影视一行。
- * 列：海报 / 名称+类别年份集数 / IMDb号 / 评分 / 观看平台 / 观看日期
+ * 列：海报 / 名称+类别年份集数 / IMDb+豆瓣 / 评分 / 观看平台 / 观看日期
  */
 export default function FilmList({ films, onClick, onContextMenu }) {
   return (
@@ -13,7 +40,7 @@ export default function FilmList({ films, onClick, onContextMenu }) {
           <tr>
             <th className="col-poster"></th>
             <th className="col-title">名称</th>
-            <th className="col-imdb">IMDb</th>
+            <th className="col-imdb">IMDb / 豆瓣</th>
             <th className="col-rating">评分</th>
             <th className="col-platforms">观看平台</th>
             <th className="col-date">观看日期</th>
@@ -51,19 +78,22 @@ export default function FilmList({ films, onClick, onContextMenu }) {
                   </div>
                 </td>
                 <td className="col-imdb">
-                  {film.imdbId ? (
-                    <a
-                      className="row-imdb"
+                  <div className="row-id-lines">
+                    <IdLine
+                      icon="imdb.svg"
+                      alt="IMDb"
+                      source="imdb"
+                      value={film.imdbId}
                       href={`https://www.imdb.com/title/${film.imdbId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {film.imdbId} <Icon name="external" size={11} />
-                    </a>
-                  ) : (
-                    <span className="row-dim">—</span>
-                  )}
+                    />
+                    <IdLine
+                      icon="douban.svg"
+                      alt="豆瓣"
+                      source="douban"
+                      value={film.doubanId}
+                      href={`https://movie.douban.com/subject/${film.doubanId}/`}
+                    />
+                  </div>
                 </td>
                 <td className="col-rating">
                   {meta?.voteAverage > 0 ? (
