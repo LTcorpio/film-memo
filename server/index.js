@@ -149,7 +149,7 @@ function shapeFilm(row) {
 
 // ---- 列表/筛选 ----
 app.get('/api/films', (req, res) => {
-  const { watchYear, releaseYear, platform, category, q } = req.query;
+  const { watchYear, releaseYear, platform, category, q, missing } = req.query;
   const where = [];
   const params = [];
   if (watchYear) { where.push('f.watch_year = ?'); params.push(Number(watchYear)); }
@@ -159,6 +159,12 @@ app.get('/api/films', (req, res) => {
     where.push('m.tmdb_id IS NULL');
   } else if (category) {
     where.push('f.category = ?'); params.push(category);
+  }
+  // 缺失值筛选：imdb / douban
+  if (missing === 'imdb') {
+    where.push("(f.imdb_id IS NULL OR TRIM(f.imdb_id) = '')");
+  } else if (missing === 'douban') {
+    where.push("(f.douban_id IS NULL OR TRIM(f.douban_id) = '')");
   }
   if (platform) {
     where.push("(',' || f.platforms_raw || ',') LIKE ? COLLATE NOCASE");
@@ -208,7 +214,9 @@ app.get('/api/stats', (_req, res) => {
   const withMeta = db.prepare(`SELECT COUNT(*) AS c FROM films f
     LEFT JOIN film_metadata m ON m.film_id = f.id WHERE m.tmdb_id IS NOT NULL`).get().c;
   const withoutMeta = total - withMeta;
-  res.json({ total, withMetadata: withMeta, withoutMetadata: withoutMeta, byCategory, byWatchYear });
+  const withoutImdb = db.prepare(`SELECT COUNT(*) AS c FROM films WHERE imdb_id IS NULL OR TRIM(imdb_id) = ''`).get().c;
+  const withoutDouban = db.prepare(`SELECT COUNT(*) AS c FROM films WHERE douban_id IS NULL OR TRIM(douban_id) = ''`).get().c;
+  res.json({ total, withMetadata: withMeta, withoutMetadata: withoutMeta, withoutImdb, withoutDouban, byCategory, byWatchYear });
 });
 
 // ---- 按名称搜索 TMDB 候选（手动填充） ----

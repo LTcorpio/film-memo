@@ -18,6 +18,10 @@
   /* 弹窗关闭按钮背景/悬停背景 */
   --modal-close-bg: rgba(0, 0, 0, 0.5);
   --modal-close-bg-hover: rgba(0, 0, 0, 0.8);
+  /* 常规按钮 hover：比 --accent / --bg-elev2 / --red 略深，保证明暗主题下方向一致 */
+  --accent-hover: #3a8ae5;
+  --btn-hover-bg: #2d3242;
+  --red-hover: #e54545;
 }
 
 /* 亮色主题变量 */
@@ -40,6 +44,10 @@
   /* 亮色主题下关闭按钮用浅灰底 + 深色图标 */
   --modal-close-bg: rgba(0, 0, 0, 0.06);
   --modal-close-bg-hover: rgba(0, 0, 0, 0.14);
+  /* 亮色主题 hover：比静止色略深，方向与暗色主题一致 */
+  --accent-hover: #1a5fc7;
+  --btn-hover-bg: #e2e6ee;
+  --red-hover: #c93d42;
 }
 
 /* 系统主题：未显式选择时跟随系统 */
@@ -60,6 +68,9 @@
     --backdrop-from: rgba(246, 247, 250, 0.78);
     --modal-close-bg: rgba(0, 0, 0, 0.06);
     --modal-close-bg-hover: rgba(0, 0, 0, 0.14);
+    --accent-hover: #1a5fc7;
+    --btn-hover-bg: #e2e6ee;
+    --red-hover: #c93d42;
   }
 }
 
@@ -106,12 +117,6 @@ body {
   font-size: 26px;
   font-weight: 700;
 }
-.header-stats {
-  display: flex;
-  gap: 20px;
-  color: var(--text-dim);
-}
-.header-stats b { color: var(--text); }
 .header-actions {
   display: flex;
   align-items: center;
@@ -119,16 +124,16 @@ body {
 }
 .theme-toggle {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px;
+  border-radius: 999px;
+  padding: 3px;
 }
 .theme-toggle button {
-  width: 26px;
-  height: 26px;
-  border-radius: 4px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -990,10 +995,10 @@ body {
   color: #fff;
 }
 .btn-primary { background: var(--accent); }
-.btn-primary:hover { background: #3a8ae5; }
+.btn-primary:hover { background: var(--accent-hover); }
 .btn-primary.small { padding: 6px 12px; font-size: 12px; }
 .btn-secondary { background: var(--bg-elev2); color: var(--text); border: 1px solid var(--border); }
-.btn-secondary:hover { background: #2d3242; }
+.btn-secondary:hover { background: var(--btn-hover-bg); }
 .btn-danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
 .btn-danger:hover { background: rgba(255, 92, 92, 0.12); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -1202,8 +1207,10 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .platform-logo { border-radius: 3px; }
 .platform-name { white-space: nowrap; }
-.platform-unknown { background: rgba(79, 158, 255, 0.14); color: var(--accent); border: none; }
+/* 无图标的平台标签：左右 padding 对称（默认 platform-tag 左 5 右 8 是为给图标留位） */
+.platform-tag-no-logo { padding: 2px 8px; }
 .card-platforms .platform-tag { padding: 1px 6px 1px 4px; font-size: 11px; }
+.card-platforms .platform-tag-no-logo { padding: 1px 6px; }
 .watch-info .platform-list {
   display: flex;
   flex-wrap: wrap;
@@ -1474,24 +1481,16 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   border: 1px solid var(--red);
 }
 .btn-danger.solid:hover:not(:disabled) {
-  background: #e54545;
+  background: var(--red-hover);
 }
 
-/* 评分管理入口按钮：置于筛选行最右侧 */
+/* 评分管理入口按钮：置于筛选行最右侧（样式复用 .btn-secondary，仅保留定位） */
 .btn-ratings {
   margin-left: auto;
-  background: var(--bg-elev2);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 14px;
-  cursor: pointer;
-  font-size: 13px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.btn-ratings:hover { background: var(--bg-elev); border-color: var(--accent); }
 
 /* Rating manager modal */
 .rating-manager { max-width: 820px; padding: 24px; }

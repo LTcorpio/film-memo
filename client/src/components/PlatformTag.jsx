@@ -53,7 +53,13 @@ export const ALL_PLATFORMS = PLATFORMS;
 export default function PlatformTag({ name, size = 16, compact = false, className = '' }) {
   const matched = matchPlatform(name);
   if (!matched) {
-    return <span className={`chip platform-unknown ${className}`}>{name}</span>;
+    // 未匹配到 SVG 时，复用 platform-tag 样式但不渲染图标；
+    // compact 模式下也无图标可显示，故始终显示名称，否则标签为空不可见。
+    return (
+      <span className={`platform-tag platform-tag-no-logo ${className}`} title={name}>
+        <span className="platform-name">{name}</span>
+      </span>
+    );
   }
   // URL 编码文件名，避免中文 / 特殊字符在 URL 中出问题
   const src = `${ICON_BASE}/${encodeURIComponent(matched.file)}`;

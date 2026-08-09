@@ -41,7 +41,7 @@ function loadTheme() {
 
 export default function App() {
   const [filters, setFilters] = useState({
-    watchYear: '', releaseYear: '', platform: '', category: '', q: '',
+    watchYear: '', releaseYear: '', platform: '', category: '', q: '', missing: '',
   });
   const [films, setFilms] = useState([]);
   const [filterOpts, setFilterOpts] = useState(null);
@@ -154,7 +154,7 @@ export default function App() {
 
   const resetFilters = () => {
     setPage(1);
-    setFilters({ watchYear: '', releaseYear: '', platform: '', category: '', q: '' });
+    setFilters({ watchYear: '', releaseYear: '', platform: '', category: '', q: '', missing: '' });
     setLoading(true);
   };
 
@@ -267,14 +267,6 @@ export default function App() {
       <header className="app-header">
         <h1><Icon name="film" size={26} /> 影视观看记录</h1>
         <div className="header-actions">
-          <div className="header-stats">
-            {stats && (
-              <>
-                <span>共 <b>{stats.total}</b> 部</span>
-                <span>已刮削元数据 <b>{stats.withMetadata}</b>/{stats.total}</span>
-              </>
-            )}
-          </div>
           <div className="theme-toggle" role="group" aria-label="主题切换">
             <button
               type="button"
@@ -282,7 +274,7 @@ export default function App() {
               onClick={() => changeTheme('light')}
               title="亮色主题"
             >
-              <Icon name="sun" size={15} />
+              <Icon name="sun" size={18} />
             </button>
             <button
               type="button"
@@ -290,7 +282,7 @@ export default function App() {
               onClick={() => changeTheme('dark')}
               title="暗色主题"
             >
-              <Icon name="moon" size={15} />
+              <Icon name="moon" size={18} />
             </button>
             <button
               type="button"
@@ -298,7 +290,7 @@ export default function App() {
               onClick={() => changeTheme('system')}
               title="跟随系统"
             >
-              <Icon name="monitor" size={15} />
+              <Icon name="monitor" size={18} />
             </button>
           </div>
           <button className="btn-primary" onClick={() => setAddingFilm(true)}>

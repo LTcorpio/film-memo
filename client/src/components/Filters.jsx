@@ -36,6 +36,15 @@ export default function Filters({ value, onChange, onReset, options, activeCount
           </select>
         </label>
 
+        <label>
+          缺失值
+          <select value={value.missing} onChange={(e) => set('missing', e.target.value)}>
+            <option value="">无</option>
+            <option value="imdb">无 IMDb</option>
+            <option value="douban">无豆瓣 ID</option>
+          </select>
+        </label>
+
         <label className="search">
           搜索名称
           <input
@@ -54,7 +63,7 @@ export default function Filters({ value, onChange, onReset, options, activeCount
 
         <button
           type="button"
-          className="btn-ratings"
+          className="btn-secondary btn-ratings"
           onClick={onOpenRatings}
           title="评分管理：批量维护豆瓣 ID 与评分数据源"
         >
