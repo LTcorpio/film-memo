@@ -6,15 +6,19 @@
  *   npm run scrape -- --id 6  # 仅处理指定 film id
  * 需在 .env 配置 TMDB_ACCESS_TOKEN 或 TMDB_API_KEY。
  */
-import { db } from '../server/db.js';
-import { tmdbConfigured, findByImdb, getDetails, normalizeDetails } from '../server/tmdb.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const IMAGES_DIR = join(__dirname, '..', 'data', 'images');
+dotenv.config({ path: join(__dirname, '..', '.env') });
+// 本地图片目录：优先从环境变量读取，否则默认项目根 data/images/
+const IMAGES_DIR = process.env.IMAGES_DIR || join(__dirname, '..', 'data', 'images');
 mkdirSync(IMAGES_DIR, { recursive: true });
+
+import { db } from '../server/db.js';
+import { tmdbConfigured, findByImdb, getDetails, normalizeDetails } from '../server/tmdb.js';
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');

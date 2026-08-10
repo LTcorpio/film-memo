@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
 
@@ -5,6 +6,7 @@ export default function FilmCard({ film, onClick, onContextMenu }) {
   const meta = film.metadata;
   const title = meta?.title || film.name;
   const year = film.releaseYear || meta?.releaseYear || '';
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   return (
     <div
@@ -14,7 +16,13 @@ export default function FilmCard({ film, onClick, onContextMenu }) {
     >
       <div className="poster">
         {meta?.posterUrl ? (
-          <img src={meta.posterUrl} alt={title} loading="lazy" />
+          <img
+            src={meta.posterUrl}
+            alt={title}
+            loading="lazy"
+            className={imgLoaded ? 'loaded' : ''}
+            onLoad={() => setImgLoaded(true)}
+          />
         ) : (
           <div className="poster-placeholder">
             <span className="ph-cat">{film.category}</span>

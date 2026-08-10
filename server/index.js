@@ -7,20 +7,21 @@ import cors from 'cors';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname } from 'node:path';
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, '..', '.env') });
 
 import { db } from './db.js';
 import { tmdbConfigured, getDetails, normalizeDetails, searchByName, imageUrl, getSeasons, getSeasonDetails } from './tmdb.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '12mb' }));
 
 const PORT = process.env.PORT || 4000;
 
-// 本地图片目录：项目根 data/images/
-const IMAGES_DIR = join(__dirname, '..', 'data', 'images');
+// 本地图片目录：优先从环境变量读取，否则默认项目根 data/images/
+const IMAGES_DIR = process.env.IMAGES_DIR || join(__dirname, '..', 'data', 'images');
 mkdirSync(IMAGES_DIR, { recursive: true });
 // 静态托管本地图片：/images/{file} → data/images/{file}
 app.use('/images', express.static(IMAGES_DIR, { maxAge: '7d', immutable: true }));

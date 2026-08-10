@@ -2,8 +2,10 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, '..', '.env') });
 const DB_PATH = process.env.DB_PATH || join(__dirname, '..', 'data', 'films.db');
 
 // 确保数据目录存在

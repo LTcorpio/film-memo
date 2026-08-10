@@ -2,7 +2,11 @@
  * TMDB API 客户端：通过 IMDb 号查找 / 按名称搜索 / 拉取详情。
  * 鉴权：优先使用 v4 Read Access Token (Bearer)，其次 v3 API Key。
  */
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMG_BASE = 'https://image.tmdb.org/t/p';

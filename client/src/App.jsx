@@ -18,6 +18,7 @@ const ROWS_KEY = 'film-memo:rows-per-page';
 const VIEW_KEY = 'film-memo:view-mode';
 const LIST_SIZE_KEY = 'film-memo:list-size';
 const THEME_KEY = 'film-memo:theme';
+const READONLY_KEY = 'film-memo:readonly';
 
 function loadRows() {
   const v = Number(localStorage.getItem(ROWS_KEY));
@@ -37,6 +38,10 @@ function loadListSize() {
 function loadTheme() {
   const v = localStorage.getItem(THEME_KEY);
   return v === 'light' || v === 'dark' || v === 'system' ? v : 'system';
+}
+
+function loadReadOnly() {
+  return localStorage.getItem(READONLY_KEY) === '1';
 }
 
 export default function App() {
@@ -62,6 +67,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState(loadViewMode);
   const [listSize, setListSize] = useState(loadListSize);
   const [theme, setTheme] = useState(loadTheme);
+  const [readOnly, setReadOnly] = useState(loadReadOnly);
   const gridRef = useRef(null);
 
   // 主题切换：写 data-theme 属性 + 持久化
@@ -69,6 +75,13 @@ export default function App() {
     setTheme(t);
     try { localStorage.setItem(THEME_KEY, t); } catch {}
     document.documentElement.setAttribute('data-theme', t);
+  };
+
+  // 只读模式切换：持久化
+  const toggleReadOnly = () => {
+    const next = !readOnly;
+    setReadOnly(next);
+    try { localStorage.setItem(READONLY_KEY, next ? '1' : '0'); } catch {}
   };
 
   // 测量影片网格的列数（auto-fill 随视口变化）
@@ -165,9 +178,10 @@ export default function App() {
     setPage(1);
   };
 
-  // 右键菜单
+  // 右键菜单（只读模式下禁用自定义菜单，同时阻止浏览器原生菜单）
   const handleCardContextMenu = (e, film) => {
     e.preventDefault();
+    if (readOnly) return;
     setContextMenu({ film, x: e.clientX, y: e.clientY });
   };
 
@@ -267,6 +281,14 @@ export default function App() {
       <header className="app-header">
         <h1><Icon name="film" size={26} /> 影视观看记录</h1>
         <div className="header-actions">
+          <button
+            type="button"
+            className={`readonly-toggle${readOnly ? ' active' : ''}`}
+            onClick={toggleReadOnly}
+            title={readOnly ? '只读模式已开启（点击关闭）' : '只读模式已关闭（点击开启）'}
+          >
+            <Icon name={readOnly ? 'lock' : 'unlock'} size={18} />
+          </button>
           <div className="theme-toggle" role="group" aria-label="主题切换">
             <button
               type="button"
@@ -293,9 +315,6 @@ export default function App() {
               <Icon name="monitor" size={18} />
             </button>
           </div>
-          <button className="btn-primary" onClick={() => setAddingFilm(true)}>
-            <Icon name="plus" size={14} /> 新增观影记录
-          </button>
         </div>
       </header>
 
@@ -306,6 +325,8 @@ export default function App() {
           onSelect={(k) =>
             updateFilters((f) => ({ ...f, category: f.category === k ? '' : k }))
           }
+          readOnly={readOnly}
+          onAdd={() => setAddingFilm(true)}
         />
       )}
 
@@ -316,6 +337,7 @@ export default function App() {
         options={filterOpts}
         activeCount={activeFilterCount}
         onOpenRatings={() => setRatingsOpen(true)}
+        readOnly={readOnly}
       />
 
       {error && <div className="error-banner"><Icon name="alert" size={16} /> {error.message}</div>}
@@ -395,6 +417,7 @@ export default function App() {
           onClose={() => setSelectedFilm(null)}
           initialEditing={detailInitial.editing}
           initialMetaOpen={detailInitial.metaOpen}
+          readOnly={readOnly}
           onChanged={() => {
             // 刷新列表中的该条记录与统计
             fetchFilm(selectedFilm.id).then(setSelectedFilm).catch(() => {});
@@ -499,7 +522,7 @@ function AddFilmModal({ onClose, onCreated }) {
   );
 }
 
-function CategoryBreakdown({ stats, active, onSelect }) {
+function CategoryBreakdown({ stats, active, onSelect, readOnly, onAdd }) {
   const total = stats.total;
   const noMetaCount = stats.withoutMetadata ?? 0;
   const NO_META = '__no_meta__';
@@ -537,6 +560,16 @@ function CategoryBreakdown({ stats, active, onSelect }) {
           <span className="cat-card-count">{x.c}</span>
         </button>
       ))}
+      {!readOnly && (
+        <button
+          type="button"
+          className="cat-card cat-card-add"
+          onClick={onAdd}
+          title="新增观影记录"
+        >
+          <span className="cat-card-name"><Icon name="plus" size={16} /> 新增</span>
+        </button>
+      )}
     </div>
   );
 }

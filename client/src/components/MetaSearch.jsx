@@ -2,6 +2,49 @@ import { useState } from 'react';
 import { searchMeta, saveMeta, fetchSeasons } from '../api.js';
 import Icon from './Icon.jsx';
 
+/** 搜索结果项海报：带淡入加载效果 */
+function ResultPoster({ posterUrl, mediaType }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <div className="result-poster">
+      {posterUrl ? (
+        <img
+          src={posterUrl}
+          alt=""
+          loading="lazy"
+          className={loaded ? 'loaded' : ''}
+          onLoad={() => setLoaded(true)}
+        />
+      ) : (
+        <div className="poster-placeholder mini">
+          <span className="ph-cat">{mediaType === 'tv' ? '剧' : '影'}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 季选择器海报缩略图：带淡入加载效果 */
+function SeasonPoster({ posterUrl }) {
+  const [loaded, setLoaded] = useState(false);
+  if (posterUrl) {
+    return (
+      <img
+        src={posterUrl}
+        alt=""
+        loading="lazy"
+        className={loaded ? 'loaded' : ''}
+        onLoad={() => setLoaded(true)}
+      />
+    );
+  }
+  return (
+    <span className="season-option-noimg">
+      <Icon name="image" size={14} />
+    </span>
+  );
+}
+
 export default function MetaSearch({ film, onClose, onSaved }) {
   const [query, setQuery] = useState(film.name);
   const [category, setCategory] = useState(film.category);
@@ -121,15 +164,7 @@ export default function MetaSearch({ film, onClose, onSaved }) {
             const isPicking = pickerKey === key;
             return (
               <div className="result-item" key={key}>
-                <div className="result-poster">
-                  {r.posterUrl ? (
-                    <img src={r.posterUrl} alt={r.title} loading="lazy" />
-                  ) : (
-                    <div className="poster-placeholder mini">
-                      <span className="ph-cat">{r.media_type === 'tv' ? '剧' : '影'}</span>
-                    </div>
-                  )}
-                </div>
+                <ResultPoster posterUrl={r.posterUrl} mediaType={r.media_type} />
                 <div className="result-info">
                   <div className="result-title">
                     {r.title}
@@ -174,13 +209,7 @@ export default function MetaSearch({ film, onClose, onSaved }) {
                                 onClick={() => pickSeason(r, s.season_number)}
                                 title={s.overview || ''}
                               >
-                                {s.posterUrl ? (
-                                  <img src={s.posterUrl} alt="" loading="lazy" />
-                                ) : (
-                                  <span className="season-option-noimg">
-                                    <Icon name="image" size={14} />
-                                  </span>
-                                )}
+                                <SeasonPoster posterUrl={s.posterUrl} />
                                 <span className="season-option-name">{s.name}</span>
                                 <span className="season-option-meta">
                                   {s.year || '—'}{s.episode_count > 0 ? ` · ${s.episode_count} 集` : ''}

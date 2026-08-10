@@ -1,7 +1,42 @@
+import { useState } from 'react';
 import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
 
 const ICON_BASE = '/icon';
+
+/** 分类→迷你占位首字缩写（列表模式海报很小，用单字更清晰） */
+const CAT_ABBREV = {
+  '电影': '影',
+  '电视剧': '剧',
+  '综艺': '综',
+  '动漫': '动',
+  '动画': '动',
+  '纪录片': '纪',
+  '短片': '短',
+};
+
+/** 列表模式小海报：带淡入加载效果 */
+function RowPoster({ posterUrl, name, title, category }) {
+  const [loaded, setLoaded] = useState(false);
+  const abbrev = CAT_ABBREV[category] || (category ? category.slice(0, 1) : '影');
+  return (
+    <div className="row-poster">
+      {posterUrl ? (
+        <img
+          src={posterUrl}
+          alt={title}
+          loading="lazy"
+          className={loaded ? 'loaded' : ''}
+          onLoad={() => setLoaded(true)}
+        />
+      ) : (
+        <div className="poster-placeholder mini">
+          <span className="ph-abbrev" title={name}>{abbrev}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** ID 单行：SVG 图标 + 可点击 ID 文本（跳转外站），Tag 样式按来源着色 */
 function IdLine({ icon, alt, href, value, source }) {
@@ -59,15 +94,12 @@ export default function FilmList({ films, onClick, onContextMenu }) {
                 onContextMenu={(e) => onContextMenu(e, film)}
               >
                 <td className="col-poster">
-                  <div className="row-poster">
-                    {meta?.posterUrl ? (
-                      <img src={meta.posterUrl} alt={title} loading="lazy" />
-                    ) : (
-                      <div className="poster-placeholder mini">
-                        <span className="ph-name">{film.name}</span>
-                      </div>
-                    )}
-                  </div>
+                  <RowPoster
+                    posterUrl={meta?.posterUrl}
+                    name={film.name}
+                    title={title}
+                    category={film.category}
+                  />
                 </td>
                 <td className="col-title">
                   <div className="row-title" title={title}>{title}</div>

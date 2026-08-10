@@ -6,11 +6,12 @@ import ExcelJS from 'exceljs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import 'dotenv/config';
-
-import { db } from '../server/db.js';
+import dotenv from 'dotenv';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, '..', '.env') });
+
+import { db } from '../server/db.js';
 
 // 中文表头（去空白/换行后）→ 英文字段
 const HEADER_MAP = {

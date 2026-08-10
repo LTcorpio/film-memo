@@ -269,11 +269,14 @@ function ImageTools({ filmId, type, label, hasLocal, hasRemote, onChanged, onErr
 export default function FilmDetail({
   film, onClose, onChanged,
   initialEditing = false, initialMetaOpen = false,
+  readOnly = false,
 }) {
-  const [metaOpen, setMetaOpen] = useState(initialMetaOpen);
+  const [metaOpen, setMetaOpen] = useState(initialMetaOpen && !readOnly);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const [editing, setEditing] = useState(initialEditing);
+  const [editing, setEditing] = useState(initialEditing && !readOnly);
+  const [posterLoaded, setPosterLoaded] = useState(false);
+  const [backdropLoaded, setBackdropLoaded] = useState(false);
   const [filmForm, setFilmForm] = useState(() => initialEditing ? filmToForm(film) : null);
   const [metaForm, setMetaForm] = useState(() => initialEditing ? {
     title: film.metadata?.title || '',
@@ -341,7 +344,12 @@ export default function FilmDetail({
         <div className="detail-scroll">
           {meta?.backdropUrl && !editing && (
             <div className="detail-backdrop">
-              <img src={meta.backdropUrl} alt="" />
+              <img
+                src={meta.backdropUrl}
+                alt=""
+                className={backdropLoaded ? 'loaded' : ''}
+                onLoad={() => setBackdropLoaded(true)}
+              />
             </div>
           )}
 
@@ -350,7 +358,12 @@ export default function FilmDetail({
               <div className="detail-poster-col">
                 <div className="detail-poster">
                   {meta?.posterUrl ? (
-                    <img src={meta.posterUrl} alt={meta.title || film.name} />
+                    <img
+                      src={meta.posterUrl}
+                      alt={meta.title || film.name}
+                      className={posterLoaded ? 'loaded' : ''}
+                      onLoad={() => setPosterLoaded(true)}
+                    />
                   ) : (
                     <div className="poster-placeholder big">
                       <span className="ph-cat">{film.category}</span>
@@ -370,7 +383,12 @@ export default function FilmDetail({
                 <div className="edit-media-col">
                   <div className="meta-poster-preview">
                     {meta?.posterUrl ? (
-                      <img src={meta.posterUrl} alt={meta.title || film.name} />
+                      <img
+                        src={meta.posterUrl}
+                        alt={meta.title || film.name}
+                        className={posterLoaded ? 'loaded' : ''}
+                        onLoad={() => setPosterLoaded(true)}
+                      />
                     ) : (
                       <div className="poster-placeholder">
                         <span className="ph-cat">{film.category}</span>

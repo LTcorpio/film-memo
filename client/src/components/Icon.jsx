@@ -189,6 +189,20 @@ const PATHS = {
       <line x1="12" y1="17" x2="12" y2="21" />
     </>
   ),
+  // 只读模式：锁（锁定不可编辑）
+  lock: (
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
+  // 只读模式：解锁（可编辑）
+  unlock: (
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0" />
+    </>
+  ),
 };
 
 const FILLED = new Set(['star']);
