@@ -162,6 +162,36 @@ func (d *DB) migrate() error {
 		}
 	}
 
+	// 兼容旧库：清洗数值列中的脏数据。旧 JS 后端可能把空字符串写入
+	// INTEGER/REAL 列（SQLite 动态类型不报错），Go 驱动严格类型会导致
+	// Scan 失败（如 converting driver.Value type string ("") to a int64）。
+	// 空白文本置 NULL；纯数字文本转为数值。
+	numericCols := []struct{ table, col, typ string }{
+		{"films", "watch_year", "INTEGER"},
+		{"films", "release_year", "INTEGER"},
+		{"films", "total_episodes", "INTEGER"},
+		{"film_metadata", "tmdb_id", "INTEGER"},
+		{"film_metadata", "runtime", "INTEGER"},
+		{"film_metadata", "vote_average", "REAL"},
+		{"film_metadata", "vote_count", "INTEGER"},
+		{"film_metadata", "number_of_seasons", "INTEGER"},
+		{"film_metadata", "number_of_episodes", "INTEGER"},
+		{"film_metadata", "budget", "INTEGER"},
+		{"film_metadata", "revenue", "INTEGER"},
+	}
+	for _, c := range numericCols {
+		if _, err := d.db.Exec(fmt.Sprintf(
+			"UPDATE %s SET %s = NULL WHERE typeof(%s) = 'text' AND trim(%s) = ''",
+			c.table, c.col, c.col, c.col)); err != nil {
+			return fmt.Errorf("clean empty text in %s.%s: %w", c.table, c.col, err)
+		}
+		if _, err := d.db.Exec(fmt.Sprintf(
+			"UPDATE %s SET %s = CAST(%s AS %s) WHERE typeof(%s) = 'text' AND trim(%s) GLOB '[-+0-9.eE]*'",
+			c.table, c.col, c.col, c.typ, c.col, c.col)); err != nil {
+			return fmt.Errorf("cast numeric text in %s.%s: %w", c.table, c.col, err)
+		}
+	}
+
 	// 若旧库 film_metadata 仍存在 douban_id 列：回填 films.douban_id 后删除该列
 	metaCols, err = d.columns("film_metadata")
 	if err != nil {
