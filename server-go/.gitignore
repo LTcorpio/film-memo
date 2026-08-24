@@ -1,0 +1,12 @@
+# 构建产物
+/bin/
+
+# 本地数据（不应入库）
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# 编辑器
+.DS_Store
+*.swp
