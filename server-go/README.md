@@ -81,8 +81,10 @@ API 端点清单见项目根 `README.md`，全部 17 个端点行为与原版一
 
 ## Docker
 
+项目根 `Dockerfile` 已适配 Go 后端（前端 build → Go 编译静态二进制 → 精简运行时三阶段）：
+
 ```bash
-docker build -f server-go/Dockerfile -t film-memo-go .
+docker build -t film-memo-go .
 docker run -d -p 8686:8686 \
   -v "$PWD/docker-data/db:/app/data" \
   -v "$PWD/docker-data/images:/app/data/images" \
