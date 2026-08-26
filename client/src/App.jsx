@@ -286,7 +286,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1><Icon name="film" size={26} /> 影视观看记录</h1>
+        <h1><Icon name="film" size={26} />个人影视观看记录</h1>
         <div className="header-actions">
           <button
             type="button"
