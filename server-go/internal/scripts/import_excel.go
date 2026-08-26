@@ -3,6 +3,8 @@
 package scripts
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -106,7 +108,10 @@ func splitMulti(s string) interface{} {
 	return t
 }
 
-// ImportExcel 读取 Excel 并导入 SQLite（对应 import-excel.js main）。
+// ImportExcel 读取 Excel 并导入 SQLite（数据模型 v2：films + viewings，对应 import-excel.js）。
+// 匹配已有影视优先按 IMDb（Excel 无豆瓣列，豆瓣键不参与导入匹配；名称不同也视为同一影视），
+// 其次按名称（IMDb 冲突时新建一条）；命中则回填 NULL 字段；每行 Excel 生成一条 viewings
+// 观看记录；已存在的同内容观看记录跳过，保证幂等、不覆盖 UI 修改过的数据。
 func ImportExcel(d *db.DB, excelPath string) error {
 	log.Printf("📖 读取 Excel: %s", excelPath)
 	f, err := excelize.OpenFile(excelPath)
@@ -152,20 +157,75 @@ func ImportExcel(d *db.DB, excelPath string) error {
 		log.Printf("⚠️  表头缺少字段: %s", strings.Join(missing, ", "))
 	}
 
-	const insertSQL = `INSERT OR IGNORE INTO films
-		(id, watch_year, category, name, imdb_id, production_countries_raw,
-		 release_year, start_date, end_date, total_episodes, platforms_raw, location, notes)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-
 	tx, err := d.DB().Begin()
 	if err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare(insertSQL)
+	rollback := func() { _ = tx.Rollback() }
+
+	findFilm, err := tx.Prepare(`SELECT id, imdb_id FROM films WHERE TRIM(name) = TRIM(?) COLLATE NOCASE`)
 	if err != nil {
-		_ = tx.Rollback()
+		rollback()
 		return err
 	}
+	backfillFilm, err := tx.Prepare(`UPDATE films SET
+		category = COALESCE(category, ?), imdb_id = COALESCE(imdb_id, ?),
+		production_countries_raw = COALESCE(production_countries_raw, ?),
+		release_year = COALESCE(release_year, ?), total_episodes = COALESCE(total_episodes, ?)
+		WHERE id = ?`)
+	if err != nil {
+		_ = findFilm.Close()
+		rollback()
+		return err
+	}
+	insertFilm, err := tx.Prepare(`INSERT INTO films
+		(name, category, imdb_id, production_countries_raw, release_year, total_episodes)
+		VALUES (?,?,?,?,?,?)`)
+	if err != nil {
+		_ = findFilm.Close()
+		_ = backfillFilm.Close()
+		rollback()
+		return err
+	}
+	viewingExists, err := tx.Prepare(`SELECT 1 FROM viewings WHERE film_id = ?
+		AND watch_year IS ? AND start_date IS ? AND end_date IS ?
+		AND platforms_raw IS ? AND location IS ? AND notes IS ?`)
+	if err != nil {
+		_ = findFilm.Close()
+		_ = backfillFilm.Close()
+		_ = insertFilm.Close()
+		rollback()
+		return err
+	}
+	insertViewing, err := tx.Prepare(`INSERT INTO viewings
+		(film_id, watch_year, start_date, end_date, platforms_raw, location, notes)
+		VALUES (?,?,?,?,?,?,?)`)
+	if err != nil {
+		_ = findFilm.Close()
+		_ = backfillFilm.Close()
+		_ = insertFilm.Close()
+		_ = viewingExists.Close()
+		rollback()
+		return err
+	}
+	findFilmByImdb, err := tx.Prepare(`SELECT id FROM films WHERE TRIM(imdb_id) = TRIM(?) COLLATE NOCASE`)
+	if err != nil {
+		_ = findFilm.Close()
+		_ = backfillFilm.Close()
+		_ = insertFilm.Close()
+		_ = viewingExists.Close()
+		_ = insertViewing.Close()
+		rollback()
+		return err
+	}
+	defer func() {
+		_ = findFilm.Close()
+		_ = backfillFilm.Close()
+		_ = insertFilm.Close()
+		_ = viewingExists.Close()
+		_ = insertViewing.Close()
+		_ = findFilmByImdb.Close()
+	}()
 
 	inserted, skipped := 0, 0
 	for r := 1; r < len(rows); r++ {
@@ -173,11 +233,10 @@ func ImportExcel(d *db.DB, excelPath string) error {
 		if len(row) == 0 {
 			continue
 		}
-		id := toInt(cell(row, 0))
-		if id == nil {
-			continue // 跳过空行/合计行
+		if toInt(cell(row, 0)) == nil {
+			continue // 跳过空行/合计行（序号列无效）
 		}
-		rec := map[string]interface{}{"id": id}
+		rec := map[string]interface{}{}
 		for col, field := range colMap {
 			if field == "id" {
 				continue
@@ -201,38 +260,108 @@ func ImportExcel(d *db.DB, excelPath string) error {
 				}
 			}
 		}
-		res, err := stmt.Exec(
-			rec["id"], rec["watch_year"], rec["category"], rec["name"], rec["imdb_id"],
-			rec["production_countries_raw"], rec["release_year"], rec["start_date"], rec["end_date"],
-			rec["total_episodes"], rec["platforms_raw"], rec["location"], rec["notes"],
-		)
-		if err != nil {
-			_ = stmt.Close()
-			_ = tx.Rollback()
+
+		name, _ := rec["name"].(string)
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+
+		// 匹配已有影视：IMDb > 名称。
+		// 行内带 IMDb 时按 IMDb 匹配（名称不同也视为同一影视）；
+		// 未命中再按名称匹配，IMDb 冲突（双方均非空且不同）视为不同影视新建一条。
+		newImdb, _ := rec["imdb_id"].(string)
+		var filmID int64
+		matched := false
+		if newImdb != "" {
+			var idByImdb sql.NullInt64
+			if err := findFilmByImdb.QueryRow(newImdb).Scan(&idByImdb); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				rollback()
+				return fmt.Errorf("第 %d 行: %w", r+1, err)
+			}
+			if idByImdb.Valid {
+				filmID = idByImdb.Int64
+				matched = true
+				if _, err := backfillFilm.Exec(
+					rec["category"], rec["imdb_id"], rec["production_countries_raw"],
+					rec["release_year"], rec["total_episodes"], filmID,
+				); err != nil {
+					rollback()
+					return fmt.Errorf("第 %d 行: %w", r+1, err)
+				}
+			}
+		}
+		if !matched {
+			var existingID sql.NullInt64
+			var existingImdb sql.NullString
+			if err := findFilm.QueryRow(name).Scan(&existingID, &existingImdb); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				rollback()
+				return fmt.Errorf("第 %d 行: %w", r+1, err)
+			}
+			imdbConflict := existingID.Valid && newImdb != "" && existingImdb.Valid && existingImdb.String != "" && newImdb != existingImdb.String
+
+			if existingID.Valid && !imdbConflict {
+				filmID = existingID.Int64
+				matched = true
+				if _, err := backfillFilm.Exec(
+					rec["category"], rec["imdb_id"], rec["production_countries_raw"],
+					rec["release_year"], rec["total_episodes"], filmID,
+				); err != nil {
+					rollback()
+					return fmt.Errorf("第 %d 行: %w", r+1, err)
+				}
+			}
+		}
+		if !matched {
+			res, err := insertFilm.Exec(
+				name, rec["category"], rec["imdb_id"], rec["production_countries_raw"],
+				rec["release_year"], rec["total_episodes"],
+			)
+			if err != nil {
+				rollback()
+				return fmt.Errorf("第 %d 行: %w", r+1, err)
+			}
+			if filmID, err = res.LastInsertId(); err != nil {
+				rollback()
+				return fmt.Errorf("第 %d 行: %w", r+1, err)
+			}
+		}
+
+		// 同内容观看记录已存在则跳过（幂等，避免重复导入）
+		var one int
+		err := viewingExists.QueryRow(
+			filmID, rec["watch_year"], rec["start_date"], rec["end_date"],
+			rec["platforms_raw"], rec["location"], rec["notes"],
+		).Scan(&one)
+		if err == nil {
+			skipped++
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			rollback()
 			return fmt.Errorf("第 %d 行: %w", r+1, err)
 		}
-		n, _ := res.RowsAffected()
-		if n > 0 {
-			inserted++
-		} else {
-			skipped++
+		if _, err := insertViewing.Exec(
+			filmID, rec["watch_year"], rec["start_date"], rec["end_date"],
+			rec["platforms_raw"], rec["location"], rec["notes"],
+		); err != nil {
+			rollback()
+			return fmt.Errorf("第 %d 行: %w", r+1, err)
 		}
+		inserted++
 	}
-	_ = stmt.Close()
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 
-	log.Printf("✅ 导入完成：新增 %d 条，跳过 %d 条已存在记录。", inserted, skipped)
+	log.Printf("✅ 导入完成：新增 %d 条观看记录，跳过 %d 条已存在记录。", inserted, skipped)
 
 	// 摘要统计
-	var total, noImdb, multiPlatform int64
-	var noImdbN, multiN int64
-	_ = d.DB().QueryRow(`SELECT COUNT(*),
-		SUM(CASE WHEN imdb_id IS NULL THEN 1 ELSE 0 END),
-		SUM(CASE WHEN platforms_raw LIKE '%,%' THEN 1 ELSE 0 END) FROM films`).Scan(&total, &noImdbN, &multiN)
-	noImdb = noImdbN
-	multiPlatform = multiN
-	log.Printf("📊 统计: { total: %d, no_imdb: %d, multi_platform: %d }", total, noImdb, multiPlatform)
+	var films, viewings, noImdb, multiPlatform int64
+	_ = d.DB().QueryRow(`SELECT
+		(SELECT COUNT(*) FROM films),
+		(SELECT COUNT(*) FROM viewings),
+		(SELECT COUNT(*) FROM films WHERE imdb_id IS NULL),
+		(SELECT COUNT(*) FROM viewings WHERE platforms_raw LIKE '%,%')`).Scan(&films, &viewings, &noImdb, &multiPlatform)
+	log.Printf("📊 统计: { films: %d, viewings: %d, no_imdb: %d, multi_platform: %d }", films, viewings, noImdb, multiPlatform)
 	return nil
 }

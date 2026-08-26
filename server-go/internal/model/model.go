@@ -1,5 +1,5 @@
 // Package model 定义数据结构与前端 JSON 整形逻辑。
-// 对应 JS 版 index.js 的 shapeFilm / META_COLS / localImageUrl。
+// 对应 JS 版 index.js 的 shapeFilm / shapeEntry / META_COLS / localImageUrl。
 package model
 
 import (
@@ -43,29 +43,29 @@ const MetaCols = `m.film_id AS m_film_id, m.imdb_id AS m_imdb_id, m.tmdb_id AS m
   m.budget AS m_budget, m.revenue AS m_revenue,
   m.content_rating AS m_content_rating, m.homepage AS m_homepage`
 
-// FilmsCols 显式列出 films 表列，顺序固定，避免依赖 ADD COLUMN 后的物理顺序。
-const FilmsCols = `f.id, f.watch_year, f.category, f.name, f.imdb_id, f.douban_id,
-  f.production_countries_raw, f.release_year, f.start_date, f.end_date,
-  f.total_episodes, f.platforms_raw, f.location, f.notes`
+// FilmsCols 显式列出 films 表列（v2 影视级字段），顺序固定，避免依赖 ADD COLUMN 后的物理顺序。
+const FilmsCols = `f.id, f.category, f.name, f.imdb_id, f.douban_id,
+  f.production_countries_raw, f.release_year, f.total_episodes`
 
-// FilmRow 是 films LEFT JOIN film_metadata 的扫描结构，字段顺序与
+// ViewingsCols 显式列出 viewings 表列（无表别名，详情查询用）。
+const ViewingsCols = `id, watch_year, start_date, end_date, platforms_raw, location, notes`
+
+// ListCols 列表查询列：观看记录 + 影视 + 元数据（GET /api/films），顺序与 EntryRow.ScanPtrs 一致。
+const ListCols = `v.id, v.watch_year, v.start_date, v.end_date, v.platforms_raw, v.location, v.notes, ` +
+	FilmsCols + `, ` + MetaCols
+
+// FilmRow 是 films LEFT JOIN film_metadata 的扫描结构（影视级），字段顺序与
 // (FilmsCols + MetaCols) 严格一致。所有可空字段用指针，NULL→nil。
 type FilmRow struct {
 	// films 列
-	ID                  int64   `db:"id"`
-	WatchYear           *int64  `db:"watch_year"`
-	Category            *string `db:"category"`
-	Name                *string `db:"name"`
-	ImdbID              *string `db:"imdb_id"`
-	DoubanID            *string `db:"douban_id"`
-	ProductionCountries *string `db:"production_countries_raw"`
-	ReleaseYear         *int64  `db:"release_year"`
-	StartDate           *string `db:"start_date"`
-	EndDate             *string `db:"end_date"`
-	TotalEpisodes       *int64  `db:"total_episodes"`
-	PlatformsRaw        *string `db:"platforms_raw"`
-	Location            *string `db:"location"`
-	Notes               *string `db:"notes"`
+	ID                    int64   `db:"id"`
+	Category              *string `db:"category"`
+	Name                  *string `db:"name"`
+	ImdbID                *string `db:"imdb_id"`
+	DoubanID              *string `db:"douban_id"`
+	ProductionCountries   *string `db:"production_countries_raw"`
+	ReleaseYear           *int64  `db:"release_year"`
+	TotalEpisodes         *int64  `db:"total_episodes"`
 	// film_metadata 列（m_ 前缀）
 	MFilmID              *int64   `db:"m_film_id"`
 	MImdbID              *string  `db:"m_imdb_id"`
@@ -110,9 +110,8 @@ type FilmRow struct {
 // 顺序必须与 (FilmsCols + MetaCols) 完全一致。
 func (r *FilmRow) ScanPtrs() []interface{} {
 	return []interface{}{
-		&r.ID, &r.WatchYear, &r.Category, &r.Name, &r.ImdbID, &r.DoubanID,
-		&r.ProductionCountries, &r.ReleaseYear, &r.StartDate, &r.EndDate,
-		&r.TotalEpisodes, &r.PlatformsRaw, &r.Location, &r.Notes,
+		&r.ID, &r.Category, &r.Name, &r.ImdbID, &r.DoubanID,
+		&r.ProductionCountries, &r.ReleaseYear, &r.TotalEpisodes,
 		&r.MFilmID, &r.MImdbID, &r.MTmdbID, &r.MMediaType, &r.MTitle, &r.MOriginalTitle,
 		&r.MOverview, &r.MPosterPath, &r.MBackdropPath, &r.MPosterLocal, &r.MBackdropLocal,
 		&r.MGenres, &r.MCountries, &r.MRuntime, &r.MVoteAverage, &r.MVoteCount,
@@ -124,7 +123,35 @@ func (r *FilmRow) ScanPtrs() []interface{} {
 	}
 }
 
-// --- 前端输出结构（键名严格对齐 JS shapeFilm 输出） ---
+// ViewingRow 是 viewings 表的扫描结构。
+type ViewingRow struct {
+	ID           int64   `db:"id"`
+	WatchYear    *int64  `db:"watch_year"`
+	StartDate    *string `db:"start_date"`
+	EndDate      *string `db:"end_date"`
+	PlatformsRaw *string `db:"platforms_raw"`
+	Location     *string `db:"location"`
+	Notes        *string `db:"notes"`
+}
+
+// ScanPtrs 顺序与 ViewingsCols 完全一致。
+func (r *ViewingRow) ScanPtrs() []interface{} {
+	return []interface{}{&r.ID, &r.WatchYear, &r.StartDate, &r.EndDate, &r.PlatformsRaw, &r.Location, &r.Notes}
+}
+
+// EntryRow 是列表查询（viewings JOIN films LEFT JOIN film_metadata）的扫描结构，
+// 顺序与 ListCols（ViewingsCols + FilmsCols + MetaCols）严格一致。
+type EntryRow struct {
+	ViewingRow
+	FilmRow
+}
+
+// ScanPtrs 顺序与 ListCols 完全一致。
+func (r *EntryRow) ScanPtrs() []interface{} {
+	return append(r.ViewingRow.ScanPtrs(), r.FilmRow.ScanPtrs()...)
+}
+
+// --- 前端输出结构（键名严格对齐 JS shapeEntry / shapeFilm 输出） ---
 
 // SpokenLanguage 对应 spoken_languages JSON 数组元素。
 type SpokenLanguage struct {
@@ -181,25 +208,54 @@ type MetadataOut struct {
 	Homepage            string              `json:"homepage"`
 }
 
-// Film 是前端影片对象（shapeFilm 输出）。
-type Film struct {
-	ID                    int64        `json:"id"`
-	WatchYear             *int64       `json:"watchYear"`
-	Category              string       `json:"category"`
-	Name                  string       `json:"name"`
-	ImdbID                string       `json:"imdbId"`
-	DoubanID              string       `json:"doubanId"`
-	ReleaseYear           *int64       `json:"releaseYear"`
-	StartDate             string       `json:"startDate"`
-	EndDate               string       `json:"endDate"`
-	TotalEpisodes         *int64       `json:"totalEpisodes"`
-	Platforms             []string     `json:"platforms"`
-	ProductionCountries   []string     `json:"productionCountries"`
-	ProductionCountriesRaw string      `json:"productionCountriesRaw"`
-	Location              string       `json:"location"`
-	Notes                 string       `json:"notes"`
-	HasMetadata           bool         `json:"hasMetadata"`
-	Metadata              *MetadataOut `json:"metadata"`
+// ViewingOut 观看记录（前端对象）。
+type ViewingOut struct {
+	ID        int64    `json:"id"`
+	WatchYear *int64   `json:"watchYear"`
+	StartDate string   `json:"startDate"`
+	EndDate   string   `json:"endDate"`
+	Platforms []string `json:"platforms"`
+	Location  string   `json:"location"`
+	Notes     string   `json:"notes"`
+}
+
+// Entry 是列表条目：一条观看记录 + 所属影视信息。
+// 字段名与旧版 films 输出保持一致，卡片/表格视图无需改动；id 为观看记录 id。
+type Entry struct {
+	ID                     int64        `json:"id"`
+	FilmID                 int64        `json:"filmId"`
+	WatchYear              *int64       `json:"watchYear"`
+	StartDate              string       `json:"startDate"`
+	EndDate                string       `json:"endDate"`
+	Platforms              []string     `json:"platforms"`
+	Location               string       `json:"location"`
+	Notes                  string       `json:"notes"`
+	Category               string       `json:"category"`
+	Name                   string       `json:"name"`
+	ImdbID                 string       `json:"imdbId"`
+	DoubanID               string       `json:"doubanId"`
+	ReleaseYear            *int64       `json:"releaseYear"`
+	TotalEpisodes          *int64       `json:"totalEpisodes"`
+	ProductionCountries    []string     `json:"productionCountries"`
+	ProductionCountriesRaw string       `json:"productionCountriesRaw"`
+	HasMetadata            bool         `json:"hasMetadata"`
+	Metadata               *MetadataOut `json:"metadata"`
+}
+
+// FilmDetail 是影视详情：影视级信息 + 该影视的全部观看记录（id 为影视 id）。
+type FilmDetail struct {
+	ID                     int64        `json:"id"`
+	Name                   string       `json:"name"`
+	Category               string       `json:"category"`
+	ImdbID                 string       `json:"imdbId"`
+	DoubanID               string       `json:"doubanId"`
+	ReleaseYear            *int64       `json:"releaseYear"`
+	TotalEpisodes          *int64       `json:"totalEpisodes"`
+	ProductionCountries    []string     `json:"productionCountries"`
+	ProductionCountriesRaw string       `json:"productionCountriesRaw"`
+	HasMetadata            bool         `json:"hasMetadata"`
+	Metadata               *MetadataOut `json:"metadata"`
+	Viewings               []ViewingOut `json:"viewings"`
 }
 
 // parseJSONStrings 把 JSON 字符串数组解析为 []string，失败或空返回空切片。
@@ -265,6 +321,21 @@ func parseProductionCompanies(raw *string) []ProductionCompany {
 	return res
 }
 
+// parsePlatforms 按 "," 拆分平台原始字段。
+func parsePlatforms(raw *string) []string {
+	platforms := []string{}
+	if raw == nil || *raw == "" {
+		return platforms
+	}
+	for _, p := range strings.Split(*raw, ",") {
+		s := strings.TrimSpace(p)
+		if s != "" {
+			platforms = append(platforms, s)
+		}
+	}
+	return platforms
+}
+
 func strPtr(s *string) string {
 	if s == nil {
 		return ""
@@ -272,20 +343,8 @@ func strPtr(s *string) string {
 	return *s
 }
 
-// ShapeFilm 把扫描行整理为前端友好对象（对应 shapeFilm）。
-func ShapeFilm(r *FilmRow) Film {
-	// 平台：按逗号拆分
-	platforms := []string{}
-	if r.PlatformsRaw != nil && *r.PlatformsRaw != "" {
-		for _, p := range strings.Split(*r.PlatformsRaw, ",") {
-			s := strings.TrimSpace(p)
-			if s != "" {
-				platforms = append(platforms, s)
-			}
-		}
-	}
-
-	// 制片国家：优先元数据，否则用 Excel 字段按 "/" 拆分
+// shapeCountries 制片国家：优先元数据，否则用 Excel 字段按 "/" 拆分。
+func shapeCountries(r *FilmRow) []string {
 	countries := parseCountries(r.MCountries)
 	if len(countries) == 0 && r.ProductionCountries != nil && *r.ProductionCountries != "" {
 		for _, c := range strings.Split(*r.ProductionCountries, "/") {
@@ -298,20 +357,14 @@ func ShapeFilm(r *FilmRow) Film {
 	if countries == nil {
 		countries = []string{}
 	}
+	return countries
+}
 
-	genres := parseJSONStrings(r.MGenres)
-	directors := parseJSONStrings(r.MDirectors)
-	cast := parseJSONStrings(r.MCast)
-	writers := parseJSONStrings(r.MWriters)
-	cinematographers := parseJSONStrings(r.MCinematographers)
-	composers := parseJSONStrings(r.MComposers)
-	producers := parseJSONStrings(r.MProducers)
-	keywords := parseJSONStrings(r.MKeywords)
-	originCountry := parseJSONStrings(r.MOriginCountry)
-	spokenLanguages := parseSpokenLanguages(r.MSpokenLanguages)
-	productionCompanies := parseProductionCompanies(r.MProductionCompanies)
-
-	// 图片：本地优先，远程兜底
+// shapeMetadata 整理元数据子对象（图片本地优先、远程兜底）。
+func shapeMetadata(r *FilmRow) *MetadataOut {
+	if r.MFilmID == nil {
+		return nil
+	}
 	posterURL := localImageURL(r.MPosterLocal)
 	if posterURL == nil {
 		posterURL = ImageURL(r.MPosterPath, "w500")
@@ -320,66 +373,101 @@ func ShapeFilm(r *FilmRow) Film {
 	if backdropURL == nil {
 		backdropURL = ImageURL(r.MBackdropPath, "w1280")
 	}
+	return &MetadataOut{
+		TmdbID:              r.MTmdbID,
+		MediaType:           strPtr(r.MMediaType),
+		Title:               strPtr(r.MTitle),
+		OriginalTitle:       strPtr(r.MOriginalTitle),
+		Overview:            strPtr(r.MOverview),
+		PosterPath:          strPtr(r.MPosterPath),
+		BackdropPath:        strPtr(r.MBackdropPath),
+		PosterLocal:         strPtr(r.MPosterLocal),
+		BackdropLocal:       strPtr(r.MBackdropLocal),
+		PosterURL:           posterURL,
+		BackdropURL:         backdropURL,
+		Genres:              parseJSONStrings(r.MGenres),
+		Runtime:             r.MRuntime,
+		VoteAverage:         r.MVoteAverage,
+		VoteCount:           r.MVoteCount,
+		Directors:           parseJSONStrings(r.MDirectors),
+		Cast:                parseJSONStrings(r.MCast),
+		ReleaseDate:         strPtr(r.MReleaseDate),
+		Status:              strPtr(r.MStatus),
+		Tagline:             strPtr(r.MTagline),
+		UpdatedAt:           strPtr(r.MUpdatedAt),
+		OriginalLanguage:    strPtr(r.MOriginalLanguage),
+		SpokenLanguages:     parseSpokenLanguages(r.MSpokenLanguages),
+		OriginCountry:       parseJSONStrings(r.MOriginCountry),
+		ProductionCompanies: parseProductionCompanies(r.MProductionCompanies),
+		Writers:             parseJSONStrings(r.MWriters),
+		Cinematographers:    parseJSONStrings(r.MCinematographers),
+		Composers:           parseJSONStrings(r.MComposers),
+		Producers:           parseJSONStrings(r.MProducers),
+		Keywords:            parseJSONStrings(r.MKeywords),
+		NumberOfSeasons:     r.MNumberOfSeasons,
+		NumberOfEpisodes:    r.MNumberOfEpisodes,
+		Budget:              r.MBudget,
+		Revenue:             r.MRevenue,
+		ContentRating:       strPtr(r.MContentRating),
+		Homepage:            strPtr(r.MHomepage),
+	}
+}
 
-	f := Film{
+// ShapeViewing 把观看记录行整理为前端对象。
+func ShapeViewing(v *ViewingRow) ViewingOut {
+	return ViewingOut{
+		ID:        v.ID,
+		WatchYear: v.WatchYear,
+		StartDate: strPtr(v.StartDate),
+		EndDate:   strPtr(v.EndDate),
+		Platforms: parsePlatforms(v.PlatformsRaw),
+		Location:  strPtr(v.Location),
+		Notes:     strPtr(v.Notes),
+	}
+}
+
+// ShapeEntry 把列表扫描行整理为前端条目对象（对应 JS shapeEntry）。
+func ShapeEntry(r *EntryRow) Entry {
+	return Entry{
+		ID:                     r.ViewingRow.ID,
+		FilmID:                 r.FilmRow.ID,
+		WatchYear:              r.ViewingRow.WatchYear,
+		StartDate:              strPtr(r.ViewingRow.StartDate),
+		EndDate:                strPtr(r.ViewingRow.EndDate),
+		Platforms:              parsePlatforms(r.ViewingRow.PlatformsRaw),
+		Location:               strPtr(r.ViewingRow.Location),
+		Notes:                  strPtr(r.ViewingRow.Notes),
+		Category:               strPtr(r.FilmRow.Category),
+		Name:                   strPtr(r.FilmRow.Name),
+		ImdbID:                 strPtr(r.FilmRow.ImdbID),
+		DoubanID:               strPtr(r.FilmRow.DoubanID),
+		ReleaseYear:            r.FilmRow.ReleaseYear,
+		TotalEpisodes:          r.FilmRow.TotalEpisodes,
+		ProductionCountries:    shapeCountries(&r.FilmRow),
+		ProductionCountriesRaw: strPtr(r.FilmRow.ProductionCountries),
+		HasMetadata:            r.FilmRow.MTmdbID != nil && *r.FilmRow.MTmdbID != 0,
+		Metadata:               shapeMetadata(&r.FilmRow),
+	}
+}
+
+// ShapeFilm 把影视级行与观看记录列表整理为前端详情对象（对应 JS shapeFilm）。
+func ShapeFilm(r *FilmRow, viewings []ViewingRow) FilmDetail {
+	vs := make([]ViewingOut, 0, len(viewings))
+	for i := range viewings {
+		vs = append(vs, ShapeViewing(&viewings[i]))
+	}
+	return FilmDetail{
 		ID:                     r.ID,
-		WatchYear:              r.WatchYear,
-		Category:               strPtr(r.Category),
 		Name:                   strPtr(r.Name),
+		Category:               strPtr(r.Category),
 		ImdbID:                 strPtr(r.ImdbID),
 		DoubanID:               strPtr(r.DoubanID),
 		ReleaseYear:            r.ReleaseYear,
-		StartDate:              strPtr(r.StartDate),
-		EndDate:                strPtr(r.EndDate),
 		TotalEpisodes:          r.TotalEpisodes,
-		Platforms:              platforms,
-		ProductionCountries:    countries,
+		ProductionCountries:    shapeCountries(r),
 		ProductionCountriesRaw: strPtr(r.ProductionCountries),
-		Location:               strPtr(r.Location),
-		Notes:                  strPtr(r.Notes),
 		HasMetadata:            r.MTmdbID != nil && *r.MTmdbID != 0,
-		Metadata:               nil,
+		Metadata:               shapeMetadata(r),
+		Viewings:               vs,
 	}
-
-	if r.MFilmID != nil {
-		f.Metadata = &MetadataOut{
-			TmdbID:              r.MTmdbID,
-			MediaType:           strPtr(r.MMediaType),
-			Title:               strPtr(r.MTitle),
-			OriginalTitle:       strPtr(r.MOriginalTitle),
-			Overview:            strPtr(r.MOverview),
-			PosterPath:          strPtr(r.MPosterPath),
-			BackdropPath:        strPtr(r.MBackdropPath),
-			PosterLocal:         strPtr(r.MPosterLocal),
-			BackdropLocal:       strPtr(r.MBackdropLocal),
-			PosterURL:           posterURL,
-			BackdropURL:         backdropURL,
-			Genres:              genres,
-			Runtime:             r.MRuntime,
-			VoteAverage:         r.MVoteAverage,
-			VoteCount:           r.MVoteCount,
-			Directors:           directors,
-			Cast:                cast,
-			ReleaseDate:         strPtr(r.MReleaseDate),
-			Status:              strPtr(r.MStatus),
-			Tagline:             strPtr(r.MTagline),
-			UpdatedAt:           strPtr(r.MUpdatedAt),
-			OriginalLanguage:    strPtr(r.MOriginalLanguage),
-			SpokenLanguages:     spokenLanguages,
-			OriginCountry:       originCountry,
-			ProductionCompanies: productionCompanies,
-			Writers:             writers,
-			Cinematographers:    cinematographers,
-			Composers:           composers,
-			Producers:           producers,
-			Keywords:            keywords,
-			NumberOfSeasons:     r.MNumberOfSeasons,
-			NumberOfEpisodes:    r.MNumberOfEpisodes,
-			Budget:              r.MBudget,
-			Revenue:             r.MRevenue,
-			ContentRating:       strPtr(r.MContentRating),
-			Homepage:            strPtr(r.MHomepage),
-		}
-	}
-	return f
 }

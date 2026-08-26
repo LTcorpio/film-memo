@@ -966,6 +966,142 @@ body {
   border: none;
 }
 
+/* 详情标题行：名称 + IMDb/豆瓣 ID 链接 */
+.detail-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.detail-title-row h2 { margin: 0; }
+.detail-id-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.detail-id-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 6px;
+  padding: 2px 8px 2px 5px;
+  font-size: 12px;
+  color: var(--id-tag-text);
+  text-decoration: none;
+  line-height: 1.4;
+}
+.detail-id-link:hover { text-decoration: none; filter: brightness(1.08); }
+.detail-id-link.imdb { background: rgba(255, 200, 70, 0.32); border: 1px solid rgba(255, 200, 70, 0.45); }
+.detail-id-link.douban { background: rgba(76, 175, 80, 0.30); border: 1px solid rgba(76, 175, 80, 0.45); }
+
+/* 观看记录卡片（同一影视的多条观看记录） */
+.viewing-record {
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+.viewing-record-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.viewing-index {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.viewing-record .watch-info { margin-bottom: 0; }
+/* 备注等后续 dl 与上方字段行保持充足间隔 */
+.viewing-record .watch-info + .watch-info { margin-top: 16px; }
+
+/* 编辑表单：观看记录选项卡 + 新增/移除操作 */
+.viewing-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.viewing-tab-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.viewing-tab {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev2);
+  color: var(--text-dim);
+  border-radius: 999px;
+  /* 与右侧 .btn-secondary.small 保持同高（相同 padding/字号） */
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.viewing-tab:hover { background: var(--btn-hover-bg); color: var(--text); }
+.viewing-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+/* 暂存新增的观看记录：虚线描边高亮，保存后生效 */
+.viewing-tab.pending-add {
+  border-style: dashed;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.viewing-tab.pending-add.active { color: #fff; }
+/* 暂存移除的观看记录：红色删除线标记，保存后生效 */
+.viewing-tab.pending-remove {
+  border-color: var(--red);
+  color: var(--red);
+  text-decoration: line-through;
+  opacity: 0.85;
+}
+.viewing-tab.pending-remove.active {
+  background: var(--red);
+  color: #fff;
+  opacity: 1;
+}
+.viewing-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+/* 暂存变更摘要（新增/移除待保存提示） */
+.viewing-pending-note {
+  flex-basis: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--amber);
+}
+/* 当前编辑的记录已标记移除时的提示条 */
+.viewing-removed-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--red);
+  background: rgba(255, 92, 92, 0.08);
+  border: 1px solid rgba(255, 92, 92, 0.35);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
 .overview-wrap {
   margin: 0 0 16px;
   overflow: hidden;
@@ -1013,7 +1149,7 @@ body {
 .watch-info {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 28px;
+  gap: 16px 28px;
   margin: 0 0 12px;
 }
 .watch-info > div { display: flex; flex-direction: column; gap: 2px; flex: 0 0 auto; }
@@ -1359,6 +1495,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   color: var(--accent);
 }
 .edit-section-title:not(:first-child) { margin-top: 20px; }
+/* .edit-form 为纵向 flex（gap:12px），其内分组标题需补偿 gap，
+   使上下间距与块级布局中的「影视元数据」标题（上 20px / 下 12px）保持一致 */
+.edit-form > .edit-section-title { margin-top: 8px; margin-bottom: 0; }
 .edit-form {
   display: flex;
   flex-direction: column;
@@ -1389,6 +1528,16 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .edit-form input:focus, .edit-form select:focus, .edit-form textarea:focus {
   outline: none;
   border-color: var(--accent);
+}
+/* 统一单行编辑控件高度：空值/含值日期输入框（原生日期行盒偏高至 40px）与
+   含中文内容的输入框（字体行高不同）均强制为固定 38px，消除高度错位 */
+.edit-form input, .edit-form select {
+  height: 38px;
+  line-height: 20px;
+}
+.edit-form input:disabled, .edit-form select:disabled, .edit-form textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .edit-form textarea { resize: vertical; min-height: 40px; }
 
@@ -1503,7 +1652,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   }
   .detail-meta-hint { text-align: center; white-space: normal; }
   .detail-info { width: 100%; }
-  .watch-info { gap: 8px 20px; }
+  .watch-info { gap: 14px 20px; }
   .edit-form .form-row { flex-direction: column; }
   .detail-main.edit-layout { flex-direction: column; }
   .edit-media-col { width: 100%; }

@@ -46,7 +46,7 @@ type refreshSummary struct {
 
 // --- 影片列表/详情/增删改 ---
 
-// handleListFilms GET /api/films
+// handleListFilms GET /api/films：每条观看记录一条目（附带影视与元数据信息）。
 func (s *Server) handleListFilms(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := db.Filter{
@@ -62,14 +62,14 @@ func (s *Server) handleListFilms(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := make([]model.Film, 0, len(rows))
+	out := make([]model.Entry, 0, len(rows))
 	for i := range rows {
-		out = append(out, model.ShapeFilm(&rows[i]))
+		out = append(out, model.ShapeEntry(&rows[i]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleGetFilm GET /api/films/:id
+// handleGetFilm GET /api/films/:id：影视详情（含全部观看记录）。
 func (s *Server) handleGetFilm(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r)
 	if err != nil {
@@ -85,10 +85,15 @@ func (s *Server) handleGetFilm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, model.ShapeFilm(row))
+	viewings, err := s.db.ListViewingsByFilm(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.ShapeFilm(row, viewings))
 }
 
-// handleCreateFilm POST /api/films
+// handleCreateFilm POST /api/films：按 豆瓣>IMDb>名称 匹配已有影视并追加观看记录，否则新建影视。
 func (s *Server) handleCreateFilm(w http.ResponseWriter, r *http.Request) {
 	body := map[string]interface{}{}
 	if err := decodeJSON(r, &body); err != nil {
@@ -105,7 +110,7 @@ func (s *Server) handleCreateFilm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "名称不能为空")
 		return
 	}
-	newID, err := s.db.InsertFilm(body)
+	newID, err := s.db.CreateFilm(body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -115,10 +120,15 @@ func (s *Server) handleCreateFilm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "load failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, model.ShapeFilm(row))
+	viewings, err := s.db.ListViewingsByFilm(newID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "load failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, model.ShapeFilm(row, viewings))
 }
 
-// handleUpdateFilm PUT /api/films/:id
+// handleUpdateFilm PUT /api/films/:id：编辑影视信息（films 表字段）。
 func (s *Server) handleUpdateFilm(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r)
 	if err != nil {
@@ -147,7 +157,64 @@ func (s *Server) handleUpdateFilm(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "updated": updated})
 }
 
-// handleDeleteFilm DELETE /api/films/:id
+// handleUpdateViewing PUT /api/viewings/:id：编辑单条观看记录。
+func (s *Server) handleUpdateViewing(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	exists, err := s.db.ViewingExists(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "viewing not found")
+		return
+	}
+	body := map[string]interface{}{}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	updated, err := s.db.UpdateViewing(id, body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "updated": updated})
+}
+
+// handleDeleteViewing DELETE /api/viewings/:id：删除单条观看记录；
+// 若为该影视最后一条，则连同影视与元数据（含本地图片）一并删除。
+func (s *Server) handleDeleteViewing(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	found, filmDeleted, locals, err := s.db.DeleteViewing(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "viewing not found")
+		return
+	}
+	if filmDeleted {
+		if locals.Poster != nil {
+			s.images.Remove(*locals.Poster)
+		}
+		if locals.Backdrop != nil {
+			s.images.Remove(*locals.Backdrop)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "filmDeleted": filmDeleted})
+}
+
+// handleDeleteFilm DELETE /api/films/:id：删除整部影视（含全部观看记录与元数据）。
 func (s *Server) handleDeleteFilm(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r)
 	if err != nil {

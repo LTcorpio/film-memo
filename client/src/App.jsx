@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchFilms, fetchFilters, fetchStats, fetchFilm, createFilm,
-  deleteMeta, deleteFilm,
+  deleteMeta, deleteViewing,
 } from './api.js';
 import Filters from './components/Filters.jsx';
 import FilmCard from './components/FilmCard.jsx';
 import FilmDetail from './components/FilmDetail.jsx';
-import FilmForm, { emptyFilmForm, filmFormToPatch } from './components/FilmForm.jsx';
+import FilmForm, { emptyFilmForm, filmFormToPatches } from './components/FilmForm.jsx';
 import Paginator, { DEFAULT_ROWS, DEFAULT_LIST_SIZE } from './components/Paginator.jsx';
 import Icon from './components/Icon.jsx';
 import ContextMenu from './components/ContextMenu.jsx';
@@ -185,6 +185,7 @@ export default function App() {
     setContextMenu({ film, x: e.clientX, y: e.clientY });
   };
 
+  // 打开详情弹窗：先显示列表条目，再拉取完整影视详情（含全部观看记录）
   const openDetail = (film, mode) => {
     setDetailInitial({
       editing: mode === 'edit',
@@ -192,6 +193,7 @@ export default function App() {
     });
     setSelectedFilm(film);
     setContextMenu(null);
+    fetchFilm(film.filmId).then(setSelectedFilm).catch(() => {});
   };
 
   // 危险操作二次确认
@@ -214,10 +216,13 @@ export default function App() {
     }
   };
 
+  // 当前详情弹窗对应的影视 id：列表条目用 filmId，详情对象（fetchFilm 返回）只有 id
+  const selectedFilmId = selectedFilm ? (selectedFilm.filmId ?? selectedFilm.id) : null;
+
   const refreshAll = (filmId) => {
     loadFilms();
     fetchStats().then(setStats).catch(() => {});
-    if (filmId != null && selectedFilm?.id === filmId) {
+    if (filmId != null && selectedFilmId === filmId) {
       fetchFilm(filmId).then(setSelectedFilm).catch(() => {});
     }
   };
@@ -229,22 +234,24 @@ export default function App() {
       confirmText: '删除',
       danger: true,
       action: async () => {
-        await deleteMeta(film.id);
-        refreshAll(film.id);
+        await deleteMeta(film.filmId);
+        refreshAll(film.filmId);
       },
     });
   };
 
-  const handleDeleteFilm = (film) => {
+  const handleDeleteViewing = (film) => {
     requestConfirm({
       title: '删除观影记录',
-      message: `确定删除观影记录「${film.name}」？\n该操作将同时删除其元数据与本地图片，且不可恢复。`,
+      message: `确定删除「${film.name}」的这条观看记录？\n若该影视仅剩此条记录，其元数据与本地图片也将一并删除。`,
       confirmText: '删除',
       danger: true,
       action: async () => {
-        await deleteFilm(film.id);
-        if (selectedFilm?.id === film.id) setSelectedFilm(null);
-        refreshAll(film.id);
+        const r = await deleteViewing(film.id);
+        if (selectedFilmId === film.filmId && r?.filmDeleted) {
+          setSelectedFilm(null);
+        }
+        refreshAll(film.filmId);
       },
     });
   };
@@ -264,7 +271,7 @@ export default function App() {
     // items.push({ type: 'divider' });
     items.push({
       type: 'item', label: '删除记录', icon: 'trash', danger: true,
-      onClick: () => handleDeleteFilm(film),
+      onClick: () => handleDeleteViewing(film),
     });
     return items;
   };
@@ -380,10 +387,7 @@ export default function App() {
             <FilmCard
               key={f.id}
               film={f}
-              onClick={() => {
-                setDetailInitial({ editing: false, metaOpen: false });
-                setSelectedFilm(f);
-              }}
+              onClick={() => openDetail(f)}
               onContextMenu={(e) => handleCardContextMenu(e, f)}
             />
           ))}
@@ -391,10 +395,7 @@ export default function App() {
       ) : (
         <FilmList
           films={pagedFilms}
-          onClick={(f) => {
-            setDetailInitial({ editing: false, metaOpen: false });
-            setSelectedFilm(f);
-          }}
+          onClick={(f) => openDetail(f)}
           onContextMenu={handleCardContextMenu}
         />
       )}
@@ -419,8 +420,11 @@ export default function App() {
           initialMetaOpen={detailInitial.metaOpen}
           readOnly={readOnly}
           onChanged={() => {
-            // 刷新列表中的该条记录与统计
-            fetchFilm(selectedFilm.id).then(setSelectedFilm).catch(() => {});
+            // 刷新详情（含全部观看记录）、列表与统计
+            // 注意：详情对象（fetchFilm 返回）只有 id 无 filmId，需做回退取值
+            fetchFilm(selectedFilm.filmId ?? selectedFilm.id)
+              .then(setSelectedFilm)
+              .catch(() => {});
             loadFilms();
             fetchStats().then(setStats).catch(() => {});
           }}
@@ -493,7 +497,9 @@ function AddFilmModal({ onClose, onCreated }) {
     setBusy(true);
     setErr(null);
     try {
-      const film = await createFilm(filmFormToPatch(form));
+      const { film: filmPatch, viewing: viewingPatch } = filmFormToPatches(form);
+      // 同名影视已存在时，后端会追加一条观看记录而非新建影视
+      const film = await createFilm({ ...filmPatch, ...viewingPatch });
       onCreated(film);
     } catch (e) {
       setErr(e.message);

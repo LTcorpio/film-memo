@@ -1,6 +1,8 @@
 /**
- * 读取「影视观看记录.xlsx」并导入 SQLite。
+ * 读取「影视观看记录.xlsx」并导入 SQLite（数据模型 v2：films + viewings）。
  * 表头（含换行）映射为英文字段；IMDb 规范化；日期转 ISO；制片国家/平台保留原始多值字段。
+ * 同名影视仅建一条 films 记录，每行 Excel 生成一条 viewings 观看记录；
+ * 已存在的同内容观看记录跳过，避免覆盖用户在 UI 里修改过的数据。
  */
 import ExcelJS from 'exceljs';
 import { fileURLToPath } from 'node:url';
@@ -109,15 +111,27 @@ async function main() {
     console.warn(`⚠️  表头缺少字段: ${missing.join(', ')}`);
   }
 
-  // 仅首次导入：已存在的 id 跳过，避免覆盖用户在 UI 里修改过的观看记录与已刮削元数据。
-  // 如需强制重置，删除 data/films.db 后再跑本脚本。
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO films
-      (id, watch_year, category, name, imdb_id, production_countries_raw,
-       release_year, start_date, end_date, total_episodes, platforms_raw, location, notes)
-    VALUES
-      (@id, @watch_year, @category, @name, @imdb_id, @production_countries_raw,
-       @release_year, @start_date, @end_date, @total_episodes, @platforms_raw, @location, @notes)
+  // 影视级字段（与 server/db.js v2 模型一致）
+  const FILM_FIELDS = ['category', 'name', 'imdb_id', 'production_countries_raw', 'release_year', 'total_episodes'];
+
+  const findFilmByName = db.prepare('SELECT * FROM films WHERE TRIM(name) = TRIM(?) COLLATE NOCASE');
+  const insertFilm = db.prepare(() => {
+    const cols = ['name', ...FILM_FIELDS.filter((f) => f !== 'name')];
+    return `INSERT INTO films (${cols.join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`;
+  });
+  const backfillFilm = db.prepare(() => {
+    // 仅回填 NULL 字段
+    const sets = FILM_FIELDS.filter((f) => f !== 'name').map((f) => `${f} = COALESCE(${f}, @${f})`);
+    return `UPDATE films SET ${sets.join(', ')} WHERE id = @id`;
+  });
+  const viewingExists = db.prepare(`
+    SELECT 1 FROM viewings WHERE film_id = @film_id
+      AND watch_year IS @watch_year AND start_date IS @start_date AND end_date IS @end_date
+      AND platforms_raw IS @platforms_raw AND location IS @location AND notes IS @notes
+  `);
+  const insertViewing = db.prepare(`
+    INSERT INTO viewings (film_id, watch_year, start_date, end_date, platforms_raw, location, notes)
+    VALUES (@film_id, @watch_year, @start_date, @end_date, @platforms_raw, @location, @notes)
   `);
 
   const tx = db.transaction(() => {
@@ -127,7 +141,7 @@ async function main() {
       const row = ws.getRow(r);
       if (!row.cellCount) continue;
       const rec = { id: null };
-      // 先取 id（序列可能是公式 ROW()-1）
+      // 先取 id（序列可能是公式 ROW()-1），仅用于识别有效行
       const idVal = toInt(unwrap(row.getCell(1)?.value));
       if (idVal === null) continue; // 跳过空行/合计行
       rec.id = idVal;
@@ -148,23 +162,56 @@ async function main() {
             rec[field] = raw == null ? null : String(raw).trim() || null;
         }
       }
-      const info = insert.run(rec);
-      if (info.changes > 0) inserted++;
-      else skipped++;
+
+      const name = rec.name;
+      if (!name) continue;
+
+      // 同名影视已存在时复用（IMDb 冲突视为不同影视，新建一条）
+      const existing = findFilmByName.get(name);
+      const imdbConflict = existing && rec.imdb_id && existing.imdb_id && rec.imdb_id !== existing.imdb_id;
+
+      let filmId;
+      if (existing && !imdbConflict) {
+        filmId = existing.id;
+        backfillFilm.run({ id: filmId, ...rec });
+      } else {
+        const filmRec = { name };
+        for (const k of FILM_FIELDS) {
+          if (k !== 'name') filmRec[k] = rec[k] ?? null;
+        }
+        filmId = insertFilm.run(filmRec).lastInsertRowid;
+      }
+
+      // 同内容观看记录已存在则跳过（幂等，避免重复导入）
+      const viewingRec = {
+        film_id: filmId,
+        watch_year: rec.watch_year ?? null,
+        start_date: rec.start_date ?? null,
+        end_date: rec.end_date ?? null,
+        platforms_raw: rec.platforms_raw ?? null,
+        location: rec.location ?? null,
+        notes: rec.notes ?? null,
+      };
+      if (viewingExists.get(viewingRec)) {
+        skipped++;
+        continue;
+      }
+      insertViewing.run(viewingRec);
+      inserted++;
     }
     return { inserted, skipped };
   });
 
   const { inserted, skipped } = tx();
-  console.log(`✅ 导入完成：新增 ${inserted} 条，跳过 ${skipped} 条已存在记录。`);
+  console.log(`✅ 导入完成：新增 ${inserted} 条观看记录，跳过 ${skipped} 条已存在记录。`);
 
   // 摘要
   const summary = db.prepare(`
     SELECT
-      COUNT(*) AS total,
-      SUM(CASE WHEN imdb_id IS NULL THEN 1 ELSE 0 END) AS no_imdb,
-      SUM(CASE WHEN platforms_raw LIKE '%,%' THEN 1 ELSE 0 END) AS multi_platform
-    FROM films
+      (SELECT COUNT(*) FROM films) AS films,
+      (SELECT COUNT(*) FROM viewings) AS viewings,
+      (SELECT COUNT(*) FROM films WHERE imdb_id IS NULL) AS no_imdb,
+      (SELECT COUNT(*) FROM viewings WHERE platforms_raw LIKE '%,%') AS multi_platform
   `).get();
   console.log('📊 统计:', summary);
 }

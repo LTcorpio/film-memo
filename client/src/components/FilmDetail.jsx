@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  updateFilm, updateMeta,
+  updateFilm, updateViewing, updateMeta, createFilm, deleteViewing,
   uploadImage, scrapeImage, deleteImage,
 } from '../api.js';
 import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
 import MetaSearch from './MetaSearch.jsx';
-import FilmForm, { filmToForm, filmFormToPatch } from './FilmForm.jsx';
+import ConfirmDialog from './ConfirmDialog.jsx';
+import FilmForm, { filmToForm, filmFormToPatches, episodeUnit, DateInput } from './FilmForm.jsx';
+
+const ICON_BASE = '/icon';
 
 /** 影视简介：长文自动截断，点击展开/收起 */
 function Overview({ text }) {
@@ -184,7 +187,7 @@ function MetaForm({ value, onChange }) {
           <input value={value.directors || ''} onChange={(e) => set('directors', e.target.value)} />
         </label>
         <label>上映日期
-          <input type="date" value={value.releaseDate || ''} onChange={(e) => set('releaseDate', e.target.value || null)} />
+          <DateInput value={value.releaseDate} onChange={(v) => set('releaseDate', v)} />
         </label>
         <label>状态
           <input value={value.status || ''} placeholder="如 Released" onChange={(e) => set('status', e.target.value)} />
@@ -266,44 +269,138 @@ function ImageTools({ filmId, type, label, hasLocal, hasRemote, onChanged, onErr
   );
 }
 
+/** 详情标题右侧的 ID 链接（带图标，跳转外站） */
+function DetailIdLinks({ imdbId, doubanId }) {
+  if (!imdbId && !doubanId) return null;
+  return (
+    <span className="detail-id-links">
+      {imdbId && (
+        <a
+          className="detail-id-link imdb"
+          href={`https://www.imdb.com/title/${imdbId}`}
+          target="_blank"
+          rel="noreferrer"
+          title={`IMDb: ${imdbId}`}
+        >
+          <img src={`${ICON_BASE}/imdb.svg`} alt="IMDb" width={13} height={13} className="row-id-logo" />
+          <span className="row-id-value">{imdbId}</span>
+        </a>
+      )}
+      {doubanId && (
+        <a
+          className="detail-id-link douban"
+          href={`https://movie.douban.com/subject/${doubanId}/`}
+          target="_blank"
+          rel="noreferrer"
+          title={`豆瓣: ${doubanId}`}
+        >
+          <img src={`${ICON_BASE}/douban.svg`} alt="豆瓣" width={13} height={13} className="row-id-logo" />
+          <span className="row-id-value">{doubanId}</span>
+        </a>
+      )}
+    </span>
+  );
+}
+
 export default function FilmDetail({
   film, onClose, onChanged,
   initialEditing = false, initialMetaOpen = false,
   readOnly = false,
 }) {
-  const [metaOpen, setMetaOpen] = useState(initialMetaOpen && !readOnly);
+  const metaOpen = initialMetaOpen && !readOnly;
+  const [metaOpenState, setMetaOpen] = useState(metaOpen);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const [editing, setEditing] = useState(initialEditing && !readOnly);
   const [posterLoaded, setPosterLoaded] = useState(false);
   const [backdropLoaded, setBackdropLoaded] = useState(false);
-  const [filmForm, setFilmForm] = useState(() => initialEditing ? filmToForm(film) : null);
-  const [metaForm, setMetaForm] = useState(() => initialEditing ? {
-    title: film.metadata?.title || '',
-    originalTitle: film.metadata?.originalTitle || '',
-    genres: (film.metadata?.genres || []).join(', '),
-    runtime: film.metadata?.runtime ?? '',
-    voteAverage: film.metadata?.voteAverage ?? '',
-    mediaType: film.metadata?.mediaType || '',
-    overview: film.metadata?.overview || '',
-    directors: (film.metadata?.directors || []).join(', '),
-    cast: (film.metadata?.cast || []).join(', '),
-    releaseDate: film.metadata?.releaseDate || '',
-    status: film.metadata?.status || '',
-    tagline: film.metadata?.tagline || '',
-  } : null);
+  const [filmForm, setFilmForm] = useState(null);
+  const [metaForm, setMetaForm] = useState(null);
+  // 当前正在编辑的观看记录 id（null = 非编辑模式；负数 = 暂存的新增草稿）
+  const [editingViewingId, setEditingViewingId] = useState(null);
+  // 观看记录暂存区：新增草稿（仅存在于前端）与待移除的真实记录 id，点击「保存」后才提交
+  const [stagedAdds, setStagedAdds] = useState([]);
+  const [stagedRemoveIds, setStagedRemoveIds] = useState([]);
+  // 草稿临时 id 序列（负数，避免与真实 id 冲突）
+  const draftSeqRef = useRef(-1);
+  // 移除确认弹窗
+  const [removeConfirm, setRemoveConfirm] = useState(false);
   const meta = film.metadata;
+  const filmId = film.filmId ?? film.id;
+
+  // 观看记录列表：完整详情来自后端；列表条目（未拉取详情时）退化为单条伪记录
+  const viewings = film.viewings || [{
+    id: film.id,
+    watchYear: film.watchYear,
+    startDate: film.startDate,
+    endDate: film.endDate,
+    platforms: film.platforms || [],
+    location: film.location,
+    notes: film.notes,
+  }];
+
+  // initialEditing 时立即进入编辑：优先匹配被点击的那条观看记录
+  useEffect(() => {
+    if (initialEditing && !readOnly && editingViewingId == null && !filmForm) {
+      const target = viewings.find((v) => v.id === film.id) || viewings[0];
+      startEdit(target);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // initialMetaOpen 由外部每次打开时传入，同步到内部状态
+  useEffect(() => {
+    setMetaOpen(metaOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metaOpen]);
+
+  // 表单当前值 → 草稿的观看级字段（用于暂存新增记录的编辑内容）
+  const formToDraft = (f) => ({
+    watchYear: f.watchYear ?? null,
+    startDate: f.startDate || null,
+    endDate: f.endDate || null,
+    platforms: (f.platformsRaw || '').split(',').map((s) => s.trim()).filter(Boolean),
+    location: f.location || null,
+    notes: f.notes || null,
+  });
+
+  const startEdit = (viewing) => {
+    setEditingViewingId(viewing?.id ?? null);
+    setErr(null);
+    // 进入编辑时清空暂存区，保证全新的编辑会话
+    setStagedAdds([]);
+    setStagedRemoveIds([]);
+    setFilmForm(filmToForm(film, viewing));
+    setMetaForm({
+      title: meta?.title || '',
+      originalTitle: meta?.originalTitle || '',
+      genres: (meta?.genres || []).join(', '),
+      runtime: meta?.runtime ?? '',
+      voteAverage: meta?.voteAverage ?? '',
+      mediaType: meta?.mediaType || '',
+      overview: meta?.overview || '',
+      directors: (meta?.directors || []).join(', '),
+      cast: (meta?.cast || []).join(', '),
+      releaseDate: meta?.releaseDate || '',
+      status: meta?.status || '',
+      tagline: meta?.tagline || '',
+    });
+  };
 
   const cancelEdit = () => {
-    setEditing(false);
+    setEditingViewingId(null);
+    setFilmForm(null);
+    setMetaForm(null);
     setErr(null);
+    // 取消即丢弃全部暂存变更（未提交的新增草稿/移除标记一并清空）
+    setStagedAdds([]);
+    setStagedRemoveIds([]);
   };
 
   const saveAll = async () => {
     setBusy(true);
     setErr(null);
     try {
-      const filmPatch = filmFormToPatch(filmForm);
+      const { film: filmPatch, viewing: viewingPatch } = filmFormToPatches(filmForm);
       const metaPatch = {
         title: metaForm.title || null,
         original_title: metaForm.originalTitle || null,
@@ -318,12 +415,44 @@ export default function FilmDetail({
         status: metaForm.status || null,
         tagline: metaForm.tagline || null,
       };
+
+      // 当前编辑中的草稿并入暂存列表（其余草稿在切换选项卡时已写回）
+      const adds = stagedAdds.map((d) => (
+        d.id === filmForm.viewingId ? { ...d, ...formToDraft(filmForm) } : d
+      ));
+      const currentId = filmForm.viewingId ?? editingViewingId;
+      const currentRemoved = currentId != null && stagedRemoveIds.includes(currentId);
+
+      // 1) 先保存影视级字段与元数据（可能的改名需先落实，后续按名称匹配追加观看记录）
       await Promise.all([
-        updateFilm(film.id, filmPatch),
-        updateMeta(film.id, metaPatch),
+        updateFilm(filmId, filmPatch),
+        updateMeta(filmId, metaPatch),
       ]);
-      setEditing(false);
+
+      // 2) 更新当前观看记录 + 提交暂存的新增（新增必须先于移除执行，
+      //    否则移除最后一条记录会连带删除影视，导致新增被建成丢失元数据的新影视）
+      await Promise.all([
+        currentId != null && currentId >= 0 && !currentRemoved
+          ? updateViewing(currentId, viewingPatch)
+          : null,
+        ...adds.map((d) => createFilm({
+          name: filmForm.name,
+          watch_year: d.watchYear ?? null,
+          start_date: d.startDate || null,
+          end_date: d.endDate || null,
+          platforms_raw: d.platforms.length > 0 ? d.platforms.join(',') : null,
+          location: d.location || null,
+          notes: d.notes || null,
+        })),
+      ]);
+
+      // 3) 最后执行暂存的移除（若移除的是最后一条记录，后端会连同影视与元数据一并删除）
+      const removed = await Promise.all(stagedRemoveIds.map((id) => deleteViewing(id)));
+      const filmDeleted = removed.some((r) => r?.filmDeleted);
+
+      cancelEdit();
       onChanged();
+      if (filmDeleted) onClose();
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -331,12 +460,123 @@ export default function FilmDetail({
     }
   };
 
-  const dateRange = [film.startDate, film.endDate]
-    .filter(Boolean)
-    .filter((v, i, a) => a.indexOf(v) === i)
-    .join(' ~ ');
+  const editing = editingViewingId != null;
+  // 当前正在编辑的观看记录是否已暂存移除
+  const currentViewingId = filmForm?.viewingId ?? editingViewingId;
+  const viewingRemoved = currentViewingId != null && currentViewingId >= 0
+    && stagedRemoveIds.includes(currentViewingId);
+
+  // 切换正在编辑的观看记录：写回当前草稿的编辑值，保留影视级字段的未保存修改
+  const switchToViewing = (target) => {
+    if (!target || !filmForm) return;
+    if (filmForm.viewingId != null && filmForm.viewingId < 0) {
+      const draft = formToDraft(filmForm);
+      setStagedAdds((prev) => prev.map((d) => (d.id === filmForm.viewingId ? { ...d, ...draft } : d)));
+    }
+    setEditingViewingId(target.id);
+    setFilmForm({
+      ...filmToForm(film, target),
+      // 影视级字段沿用当前编辑值，切换选项卡不丢失未保存的修改
+      name: filmForm.name,
+      category: filmForm.category,
+      releaseYear: filmForm.releaseYear,
+      totalEpisodes: filmForm.totalEpisodes,
+      productionCountriesRaw: filmForm.productionCountriesRaw,
+      imdbId: filmForm.imdbId,
+      doubanId: filmForm.doubanId,
+    });
+  };
+
+  // 编辑模式下切换要编辑的观看记录
+  const onViewingSelect = (viewingId) => {
+    if (viewingId === filmForm?.viewingId) return;
+    const target = [...viewings, ...stagedAdds].find((v) => v.id === viewingId);
+    if (!target) return;
+    switchToViewing(target);
+  };
+
+  // 选项卡数据：真实记录（含暂存移除标记）+ 暂存的新增草稿
+  const viewingOptions = [
+    ...viewings.map((v) => ({
+      id: v.id,
+      watchYear: v.watchYear,
+      pendingRemove: stagedRemoveIds.includes(v.id),
+      isNew: false,
+    })),
+    ...stagedAdds.map((d) => ({
+      id: d.id,
+      watchYear: d.watchYear,
+      pendingRemove: false,
+      isNew: true,
+    })),
+  ];
+
+  // 为该影视新增一条观看记录（仅暂存草稿，点击「保存」后才提交）
+  const handleAddViewing = () => {
+    if (!filmForm) return;
+    setErr(null);
+    const newId = draftSeqRef.current--;
+    const draft = {
+      id: newId,
+      watchYear: null,
+      startDate: null,
+      endDate: null,
+      platforms: [],
+      location: null,
+      notes: null,
+    };
+    setStagedAdds((prev) => {
+      // 当前若也是草稿，先写回其编辑值
+      const base = filmForm.viewingId != null && filmForm.viewingId < 0
+        ? prev.map((d) => (d.id === filmForm.viewingId ? { ...d, ...formToDraft(filmForm) } : d))
+        : prev;
+      return [...base, draft];
+    });
+    // 切换到新草稿（影视级字段保留当前编辑值）
+    setFilmForm((f) => ({
+      ...f,
+      viewingId: newId,
+      watchYear: null,
+      startDate: null,
+      endDate: null,
+      platformsRaw: '',
+      location: '',
+      notes: '',
+    }));
+    setEditingViewingId(newId);
+  };
+
+  // 移除当前观看记录（危险操作，二次确认；草稿直接丢弃，真实记录暂存标记）
+  const handleRemoveViewing = () => {
+    setRemoveConfirm(true);
+  };
+
+  const doRemoveViewing = () => {
+    const id = filmForm?.viewingId ?? editingViewingId;
+    if (id == null) {
+      setRemoveConfirm(false);
+      return;
+    }
+    if (id < 0) {
+      // 暂存草稿：直接丢弃
+      setStagedAdds((prev) => prev.filter((d) => d.id !== id));
+    } else if (!stagedRemoveIds.includes(id)) {
+      setStagedRemoveIds((prev) => [...prev, id]);
+    }
+    setRemoveConfirm(false);
+    // 切换到第一个仍可编辑的选项卡（未标记移除的真实记录或草稿）
+    const selectable = [
+      ...viewings.filter((v) => v.id !== id && !stagedRemoveIds.includes(v.id)),
+      ...stagedAdds.filter((d) => d.id !== id),
+    ];
+    const fallback = selectable[0]
+      ?? [...viewings.filter((v) => v.id !== id), ...stagedAdds.filter((d) => d.id !== id)][0];
+    if (fallback) switchToViewing(fallback);
+    // 无任何剩余记录时不切换：表单停留在已标记移除的记录上，字段禁用并显示提示
+  };
 
   return (
+    <>
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal film-detail" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
@@ -397,7 +637,7 @@ export default function FilmDetail({
                     )}
                   </div>
                   <ImageTools
-                    filmId={film.id}
+                    filmId={filmId}
                     type="poster"
                     label="海报"
                     hasLocal={Boolean(meta?.posterLocal)}
@@ -406,7 +646,7 @@ export default function FilmDetail({
                     onError={setErr}
                   />
                   <ImageTools
-                    filmId={film.id}
+                    filmId={filmId}
                     type="backdrop"
                     label="背景图"
                     hasLocal={Boolean(meta?.backdropLocal)}
@@ -416,21 +656,36 @@ export default function FilmDetail({
                   />
                 </div>
                 <div className="edit-forms-col">
-                  <h3 className="edit-section-title"><Icon name="edit" size={16} /> 编辑观看记录</h3>
-                  <FilmForm value={filmForm} onChange={setFilmForm} />
-                  <h3 className="edit-section-title"><Icon name="info" size={16} /> 编辑元数据</h3>
+                  <FilmForm
+                    value={filmForm}
+                    onChange={setFilmForm}
+                    viewingOptions={viewingOptions}
+                    onViewingSelect={onViewingSelect}
+                    onAddViewing={handleAddViewing}
+                    onRemoveViewing={handleRemoveViewing}
+                    viewingActionsDisabled={busy}
+                    viewingRemoved={viewingRemoved}
+                    pendingCount={{ adds: stagedAdds.length, removes: stagedRemoveIds.length }}
+                  />
+                  <h3 className="edit-section-title"><Icon name="film" size={16} /> 影视元数据</h3>
                   <MetaForm value={metaForm} onChange={setMetaForm} />
                 </div>
               </>
             ) : (
               <div className="detail-info">
-                <h2>{meta?.title || film.name}</h2>
+                <div className="detail-title-row">
+                  <h2>{meta?.title || film.name}</h2>
+                  <DetailIdLinks imdbId={film.imdbId} doubanId={film.doubanId} />
+                </div>
                 {meta?.originalTitle && meta.originalTitle !== meta.title && (
                   <div className="original-title">{meta.originalTitle}</div>
                 )}
 
                 <div className="detail-tags">
                   <span className="cat-tag">{film.category}</span>
+                  {film.totalEpisodes > 0 && episodeUnit(film.category) && (
+                    <span className="tag" title="总集/期数"><Icon name="film" size={12} /> 共 {film.totalEpisodes} {episodeUnit(film.category)}</span>
+                  )}
                   {meta?.releaseDate && <span className="tag">{meta.releaseDate.slice(0, 4)}</span>}
                   {meta?.runtime > 0 && (
                     <span className="tag"><Icon name="clock" size={12} /> {meta.runtime} 分钟</span>
@@ -444,59 +699,55 @@ export default function FilmDetail({
                 {meta?.tagline && <p className="meta-tagline">“{meta.tagline}”</p>}
                 {meta?.overview && <Overview text={meta.overview} />}
 
-                {/* 影片元数据 */}
+                {/* 影视元数据 */}
                 <MetaInfo meta={meta} film={film} />
 
-                {/* 观看数据 —— 仅 6 项 */}
+                {/* 观看记录 —— 该影视的全部观看记录 */}
                 <div className="section-divider"><span>观看记录</span></div>
-                <dl className="watch-info">
-                  <div><dt>观看年份</dt><dd>{film.watchYear || '—'}</dd></div>
-                  <div><dt>观看日期</dt><dd>{dateRange || '—'}</dd></div>
-                  {film.totalEpisodes > 0 && (
-                    <div><dt>总集数</dt><dd>{film.totalEpisodes}</dd></div>
-                  )}
-                  {film.platforms.length > 0 && (
-                    <div>
-                      <dt>观看平台</dt>
-                      <dd className="platform-list">
-                        {film.platforms.map((p) => <PlatformTag key={p} name={p} size={16} />)}
-                      </dd>
+                {viewings.map((v, idx) => {
+                  const dateRange = [v.startDate, v.endDate]
+                    .filter(Boolean)
+                    .filter((val, i, a) => a.indexOf(val) === i)
+                    .join(' ~ ');
+                  return (
+                    <div className="viewing-record" key={v.id ?? idx}>
+                      <div className="viewing-record-head">
+                        <span className="viewing-index">
+                          <Icon name="calendar" size={12} /> 第 {idx + 1} 次观看{v.watchYear ? ` · ${v.watchYear} 年` : ''}
+                        </span>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            className="btn-secondary small"
+                            onClick={() => startEdit(v)}
+                          >
+                            <Icon name="edit" size={12} /> 编辑
+                          </button>
+                        )}
+                      </div>
+                      <dl className="watch-info">
+                        <div><dt>观看年份</dt><dd>{v.watchYear || '—'}</dd></div>
+                        <div><dt>观看日期</dt><dd>{dateRange || '—'}</dd></div>
+                        {v.platforms.length > 0 && (
+                          <div>
+                            <dt>观看平台</dt>
+                            <dd className="platform-list">
+                              {v.platforms.map((p) => <PlatformTag key={p} name={p} size={16} />)}
+                            </dd>
+                          </div>
+                        )}
+                        {v.location && (
+                          <div><dt>观看地点</dt><dd>{v.location}</dd></div>
+                        )}
+                      </dl>
+                      {v.notes && (
+                        <dl className="watch-info">
+                          <div><dt>备注</dt><dd className="notes-dd">{v.notes}</dd></div>
+                        </dl>
+                      )}
                     </div>
-                  )}
-                  {film.location && (
-                    <div><dt>观看地点</dt><dd>{film.location}</dd></div>
-                  )}
-                  {film.imdbId && (
-                    <div>
-                      <dt>IMDb</dt>
-                      <dd>
-                        <a href={`https://www.imdb.com/title/${film.imdbId}`} target="_blank" rel="noreferrer">
-                          {film.imdbId} <Icon name="external" size={11} />
-                        </a>
-                      </dd>
-                    </div>
-                  )}
-                  {film.doubanId && (
-                    <div>
-                      <dt>豆瓣</dt>
-                      <dd>
-                        <a
-                          href={`https://movie.douban.com/subject/${film.doubanId}/`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="douban-link"
-                        >
-                          {film.doubanId} <Icon name="external" size={11} />
-                        </a>
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-                {film.notes && (
-                  <dl className="watch-info">
-                    <div><dt>备注</dt><dd className="notes-dd">{film.notes}</dd></div>
-                  </dl>
-                )}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -516,9 +767,9 @@ export default function FilmDetail({
         )}
       </div>
 
-      {metaOpen && (
+      {metaOpenState && (
         <MetaSearch
-          film={film}
+          film={{ ...film, id: filmId }}
           onClose={() => setMetaOpen(false)}
           onSaved={() => {
             setMetaOpen(false);
@@ -527,5 +778,18 @@ export default function FilmDetail({
         />
       )}
     </div>
+
+    <ConfirmDialog
+      open={removeConfirm}
+      title="移除观看记录"
+      message={currentViewingId != null && currentViewingId < 0
+        ? '确定移除这条尚未保存的新增记录？其中已填写的内容将丢弃。'
+        : `确定移除「${film.name}」的当前观看记录？\n移除将在点击「保存」后生效；若该影视仅剩此条记录，其元数据与本地图片也将一并删除。`}
+      confirmText="移除"
+      danger
+      onConfirm={doRemoveViewing}
+      onCancel={() => setRemoveConfirm(false)}
+    />
+    </>
   );
 }

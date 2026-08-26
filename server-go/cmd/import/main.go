@@ -13,7 +13,7 @@ import (
 
 func main() {
 	cfg := config.Load()
-	d, err := db.Open(cfg.DBPath)
+	d, err := db.Open(cfg.DBPath, cfg.ImagesDir)
 	if err != nil {
 		log.Fatalf("打开数据库失败: %v", err)
 	}

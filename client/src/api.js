@@ -21,7 +21,7 @@ export const fetchFilm = (id) => http(`${BASE}/films/${id}`);
 export const fetchFilters = () => http(`${BASE}/filters`);
 export const fetchStats = () => http(`${BASE}/stats`);
 
-/** 新增观影记录 */
+/** 新增观影记录（同名影视已存在时追加一条观看记录，否则新建影视） */
 export const createFilm = (data) =>
   http(`${BASE}/films`, {
     method: 'POST',
@@ -49,7 +49,7 @@ export const saveMeta = (filmId, tmdbId, mediaType, season) =>
 export const deleteMeta = (filmId) =>
   http(`${BASE}/films/${filmId}/metadata`, { method: 'DELETE' });
 
-/** 编辑观看记录（films 表字段，传需要更新的字段即可） */
+/** 编辑影视信息（films 表字段，传需要更新的字段即可） */
 export const updateFilm = (filmId, patch) =>
   http(`${BASE}/films/${filmId}`, {
     method: 'PUT',
@@ -57,9 +57,21 @@ export const updateFilm = (filmId, patch) =>
     body: JSON.stringify(patch),
   });
 
-/** 删除整条观影记录（同时删除元数据与本地图片） */
+/** 编辑观看记录（viewings 表字段） */
+export const updateViewing = (viewingId, patch) =>
+  http(`${BASE}/viewings/${viewingId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+
+/** 删除整部影视（含全部观看记录、元数据与本地图片） */
 export const deleteFilm = (filmId) =>
   http(`${BASE}/films/${filmId}`, { method: 'DELETE' });
+
+/** 删除单条观看记录（若为该影视最后一条，后端将连同影视与元数据一并删除） */
+export const deleteViewing = (viewingId) =>
+  http(`${BASE}/viewings/${viewingId}`, { method: 'DELETE' });
 
 /** 编辑元数据（title/overview/genres/runtime/vote_average 等） */
 export const updateMeta = (filmId, patch) =>

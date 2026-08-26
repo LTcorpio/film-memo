@@ -26,9 +26,9 @@ function RatingRow({ film, onSaved }) {
         imdb_id: imdbId.trim() || null,
         douban_id: doubanId.trim() || null,
       };
-      await updateFilm(film.id, payload);
+      await updateFilm(film.filmId, payload);
       setSaved(true);
-      onSaved(film.id, payload);
+      onSaved(film.filmId, payload);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -118,12 +118,20 @@ export default function RatingManager({ films, filters, onClose, onChanged }) {
     }
   };
 
-  // 将覆盖层应用到 films，使徽标即时反映刚保存的豆瓣 ID
-  const rows = films.map((f) => {
-    if (!(f.id in overrides)) return f;
-    const { imdbId, doubanId } = overrides[f.id];
-    return { ...f, imdbId: imdbId || null, doubanId: doubanId || null };
-  });
+  // 将覆盖层应用到 films，使徽标即时反映刚保存的豆瓣 ID；
+  // 同一影视可能有多条观看记录，按 filmId 去重只保留一行
+  const seen = new Set();
+  const rows = films
+    .filter((f) => {
+      if (seen.has(f.filmId)) return false;
+      seen.add(f.filmId);
+      return true;
+    })
+    .map((f) => {
+      if (!(f.filmId in overrides)) return f;
+      const { imdbId, doubanId } = overrides[f.filmId];
+      return { ...f, imdbId: imdbId || null, doubanId: doubanId || null };
+    });
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -158,7 +166,7 @@ export default function RatingManager({ films, filters, onClose, onChanged }) {
             <div className="results-empty">无匹配记录，请先调整筛选条件。</div>
           ) : (
             rows.map((f) => (
-              <RatingRow key={f.id} film={f} onSaved={handleRowSaved} />
+              <RatingRow key={f.filmId} film={f} onSaved={handleRowSaved} />
             ))
           )}
         </div>

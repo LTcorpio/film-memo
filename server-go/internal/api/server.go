@@ -47,6 +47,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/films/{id}", s.handleUpdateFilm)
 	mux.HandleFunc("DELETE /api/films/{id}", s.handleDeleteFilm)
 
+	// 观看记录 CRUD
+	mux.HandleFunc("PUT /api/viewings/{id}", s.handleUpdateViewing)
+	mux.HandleFunc("DELETE /api/viewings/{id}", s.handleDeleteViewing)
+
 	// 筛选与统计
 	mux.HandleFunc("GET /api/filters", s.handleFilters)
 	mux.HandleFunc("GET /api/stats", s.handleStats)

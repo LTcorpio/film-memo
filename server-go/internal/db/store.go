@@ -19,15 +19,23 @@ func nowISO() string {
 	return time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
 
-// --- 字段白名单与类型分类 ---
+// --- 字段白名单与类型分类（v2：影视级 films / 观看级 viewings 两组） ---
 
 var filmFieldWhiteList = []string{
-	"watch_year", "category", "name", "imdb_id", "douban_id", "production_countries_raw",
-	"release_year", "start_date", "end_date", "total_episodes", "platforms_raw", "location", "notes",
+	"category", "name", "imdb_id", "douban_id", "production_countries_raw",
+	"release_year", "total_episodes",
 }
 
 var filmIntFields = map[string]bool{
-	"watch_year": true, "release_year": true, "total_episodes": true,
+	"release_year": true, "total_episodes": true,
+}
+
+var viewingFieldWhiteList = []string{
+	"watch_year", "start_date", "end_date", "platforms_raw", "location", "notes",
+}
+
+var viewingIntFields = map[string]bool{
+	"watch_year": true,
 }
 
 var metaFieldWhiteList = []string{
@@ -123,6 +131,22 @@ func toArrayJSON(v interface{}) interface{} {
 	return nil
 }
 
+// filmValue 把请求体值转为 films 表列值（按字段类型转换）。
+func filmValue(k string, v interface{}) interface{} {
+	if filmIntFields[k] {
+		return toInt64(v)
+	}
+	return toText(v)
+}
+
+// viewingValue 把请求体值转为 viewings 表列值（按字段类型转换）。
+func viewingValue(k string, v interface{}) interface{} {
+	if viewingIntFields[k] {
+		return toInt64(v)
+	}
+	return toText(v)
+}
+
 // imgLocalColumn 把 poster/backdrop 映射为 poster_local/backdrop_local 列名。
 func imgLocalColumn(imgType string) (string, bool) {
 	switch imgType {
@@ -136,24 +160,24 @@ func imgLocalColumn(imgType string) (string, bool) {
 
 // --- 查询 ---
 
-// ListFilms 列表查询（GET /api/films）。
-func (d *DB) ListFilms(f Filter) ([]model.FilmRow, error) {
+// ListFilms 列表查询（GET /api/films）：每条观看记录一行，附带影视与元数据信息。
+func (d *DB) ListFilms(f Filter) ([]model.EntryRow, error) {
 	where, args := d.buildWhere(f)
-	q := "SELECT " + model.FilmsCols + ", " + model.MetaCols +
-		" FROM films f LEFT JOIN film_metadata m ON m.film_id = f.id"
+	q := "SELECT " + model.ListCols +
+		" FROM viewings v JOIN films f ON f.id = v.film_id LEFT JOIN film_metadata m ON m.film_id = f.id"
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
-	q += " ORDER BY f.watch_year DESC, f.start_date DESC NULLS LAST, f.id DESC"
+	q += " ORDER BY v.watch_year DESC, v.start_date DESC NULLS LAST, v.id DESC"
 
 	rows, err := d.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []model.FilmRow{}
+	out := []model.EntryRow{}
 	for rows.Next() {
-		var r model.FilmRow
+		var r model.EntryRow
 		if err := rows.Scan(r.ScanPtrs()...); err != nil {
 			return nil, err
 		}
@@ -162,7 +186,7 @@ func (d *DB) ListFilms(f Filter) ([]model.FilmRow, error) {
 	return out, rows.Err()
 }
 
-// GetFilm 单条详情（GET /api/films/:id）。
+// GetFilm 单条影视详情（GET /api/films/:id，影视级，不含观看记录）。
 func (d *DB) GetFilm(id int64) (*model.FilmRow, error) {
 	q := "SELECT " + model.FilmsCols + ", " + model.MetaCols +
 		" FROM films f LEFT JOIN film_metadata m ON m.film_id = f.id WHERE f.id = ?"
@@ -177,7 +201,27 @@ func (d *DB) GetFilm(id int64) (*model.FilmRow, error) {
 	return &r, nil
 }
 
-// Filters 筛选项（GET /api/filters）。
+// ListViewingsByFilm 取某影视的全部观看记录（按观看年份/开始日期/插入顺序升序）。
+func (d *DB) ListViewingsByFilm(filmID int64) ([]model.ViewingRow, error) {
+	rows, err := d.db.Query(
+		"SELECT "+model.ViewingsCols+" FROM viewings WHERE film_id = ? ORDER BY watch_year ASC NULLS LAST, start_date ASC NULLS LAST, id ASC",
+		filmID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.ViewingRow{}
+	for rows.Next() {
+		var r model.ViewingRow
+		if err := rows.Scan(r.ScanPtrs()...); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Filters 筛选项（GET /api/filters）：观看年份/平台来自 viewings，其余来自 films。
 func (d *DB) Filters() (*Filters, error) {
 	out := &Filters{
 		WatchYears:   []int64{},
@@ -186,8 +230,8 @@ func (d *DB) Filters() (*Filters, error) {
 		Platforms:    []string{},
 	}
 
-	// watchYears
-	rows, err := d.db.Query("SELECT DISTINCT watch_year AS v FROM films WHERE watch_year IS NOT NULL ORDER BY v DESC")
+	// watchYears（观看记录的观看年份）
+	rows, err := d.db.Query("SELECT DISTINCT watch_year AS v FROM viewings WHERE watch_year IS NOT NULL ORDER BY v DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -244,8 +288,8 @@ func (d *DB) Filters() (*Filters, error) {
 		return nil, err
 	}
 
-	// platforms
-	rows, err = d.db.Query("SELECT platforms_raw FROM films WHERE platforms_raw IS NOT NULL")
+	// platforms（观看记录的平台）
+	rows, err = d.db.Query("SELECT platforms_raw FROM viewings WHERE platforms_raw IS NOT NULL")
 	if err != nil {
 		return nil, err
 	}
@@ -279,28 +323,32 @@ func (d *DB) Filters() (*Filters, error) {
 	return out, nil
 }
 
-// Stats 概览统计（GET /api/stats）。
+// Stats 概览统计（GET /api/stats）：以观看记录为计数单位（与列表展示一致）。
 func (d *DB) Stats() (*Stats, error) {
 	out := &Stats{
 		ByCategory:  []CatStat{},
 		ByWatchYear: []YearStat{},
 	}
-	if err := d.db.QueryRow("SELECT COUNT(*) FROM films").Scan(&out.Total); err != nil {
+	if err := d.db.QueryRow("SELECT COUNT(*) FROM viewings").Scan(&out.Total); err != nil {
 		return nil, err
 	}
-	if err := d.db.QueryRow(`SELECT COUNT(*) FROM films f
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM viewings v
+		JOIN films f ON f.id = v.film_id
 		LEFT JOIN film_metadata m ON m.film_id = f.id WHERE m.tmdb_id IS NOT NULL`).Scan(&out.WithMetadata); err != nil {
 		return nil, err
 	}
 	out.WithoutMetadata = out.Total - out.WithMetadata
-	if err := d.db.QueryRow("SELECT COUNT(*) FROM films WHERE imdb_id IS NULL OR TRIM(imdb_id) = ''").Scan(&out.WithoutImdb); err != nil {
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM viewings v
+		JOIN films f ON f.id = v.film_id WHERE f.imdb_id IS NULL OR TRIM(f.imdb_id) = ''`).Scan(&out.WithoutImdb); err != nil {
 		return nil, err
 	}
-	if err := d.db.QueryRow("SELECT COUNT(*) FROM films WHERE douban_id IS NULL OR TRIM(douban_id) = ''").Scan(&out.WithoutDouban); err != nil {
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM viewings v
+		JOIN films f ON f.id = v.film_id WHERE f.douban_id IS NULL OR TRIM(f.douban_id) = ''`).Scan(&out.WithoutDouban); err != nil {
 		return nil, err
 	}
 
-	rows, err := d.db.Query("SELECT category AS k, COUNT(*) AS c FROM films GROUP BY category ORDER BY c DESC")
+	rows, err := d.db.Query(`SELECT f.category AS k, COUNT(*) AS c
+		FROM viewings v JOIN films f ON f.id = v.film_id GROUP BY f.category ORDER BY c DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +371,7 @@ func (d *DB) Stats() (*Stats, error) {
 		return nil, err
 	}
 
-	rows, err = d.db.Query("SELECT watch_year AS k, COUNT(*) AS c FROM films WHERE watch_year IS NOT NULL GROUP BY watch_year ORDER BY k")
+	rows, err = d.db.Query("SELECT watch_year AS k, COUNT(*) AS c FROM viewings WHERE watch_year IS NOT NULL GROUP BY watch_year ORDER BY k")
 	if err != nil {
 		return nil, err
 	}
@@ -344,10 +392,23 @@ func (d *DB) Stats() (*Stats, error) {
 	return out, nil
 }
 
-// FilmExists 判断影片是否存在。
+// FilmExists 判断影视是否存在。
 func (d *DB) FilmExists(id int64) (bool, error) {
 	var one int
 	err := d.db.QueryRow("SELECT 1 FROM films WHERE id = ?", id).Scan(&one)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// ViewingExists 判断观看记录是否存在。
+func (d *DB) ViewingExists(id int64) (bool, error) {
+	var one int
+	err := d.db.QueryRow("SELECT 1 FROM viewings WHERE id = ?", id).Scan(&one)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
@@ -485,10 +546,10 @@ func (d *DB) ListFilmsForScrape(force bool, onlyID *int64) ([]FilmBasic, error) 
 	return out, rows.Err()
 }
 
-// ListFilmRefsForRatings 评分刷新用的影片引用列表。
+// ListFilmRefsForRatings 评分刷新用的影片引用列表（同一影视去重，仅含有观看记录的影视）。
 func (d *DB) ListFilmRefsForRatings(f Filter) ([]FilmRef, error) {
 	where, args := d.buildWhere(f)
-	q := "SELECT f.id, f.name, m.tmdb_id AS tmdb, m.media_type AS mt FROM films f LEFT JOIN film_metadata m ON m.film_id = f.id"
+	q := "SELECT DISTINCT f.id, f.name, m.tmdb_id AS tmdb, m.media_type AS mt FROM films f JOIN viewings v ON v.film_id = f.id LEFT JOIN film_metadata m ON m.film_id = f.id"
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -519,40 +580,137 @@ func (d *DB) ListFilmRefsForRatings(f Filter) ([]FilmRef, error) {
 
 // --- 写入 ---
 
-// InsertFilm 新增观影记录，返回新 id（POST /api/films）。
-func (d *DB) InsertFilm(fields map[string]interface{}) (int64, error) {
-	cols := []string{}
-	args := []interface{}{}
-	for _, k := range filmFieldWhiteList {
-		v, ok := fields[k]
-		if !ok {
-			continue
-		}
-		var val interface{}
-		if filmIntFields[k] {
-			val = toInt64(v)
-		} else {
-			val = toText(v)
-		}
-		cols = append(cols, k)
-		args = append(args, val)
+// CreateFilm 新增观影记录（POST /api/films）：按 豆瓣 > IMDb > 名称（忽略大小写）匹配
+// 已有影视（与迁移/导入的去重判定一致），命中且无 ID 冲突时追加一条观看记录并回填
+// 影视级缺失字段，否则新建影视。返回影视 id。
+func (d *DB) CreateFilm(body map[string]interface{}) (filmID int64, err error) {
+	nameStr := ""
+	if v, ok := body["name"].(string); ok {
+		nameStr = v
 	}
-	if len(cols) == 0 {
-		return 0, fmt.Errorf("无有效字段")
+	nameStr = strings.TrimSpace(nameStr)
+	if nameStr == "" {
+		return 0, fmt.Errorf("名称不能为空")
 	}
-	placeholders := make([]string, len(cols))
-	for i := range placeholders {
-		placeholders[i] = "?"
-	}
-	q := "INSERT INTO films (" + strings.Join(cols, ", ") + ") VALUES (" + strings.Join(placeholders, ", ") + ")"
-	res, err := d.db.Exec(q, args...)
+
+	tx, err := d.db.Begin()
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	newImdb, _ := body["imdb_id"].(string)
+	newImdb = strings.TrimSpace(newImdb)
+	newDouban, _ := body["douban_id"].(string)
+	newDouban = strings.TrimSpace(newDouban)
+
+	// 匹配已有影视：豆瓣 > IMDb > 名称。
+	// 豆瓣号命中即同一影视；按 IMDb / 名称匹配时任一 ID 冲突（双方均非空且不同）
+	// 视为不同影视（多季综艺各季豆瓣条目不同，据此保持独立）。
+	var existingID sql.NullInt64
+	var existingImdb, existingDouban sql.NullString
+
+	if newDouban != "" {
+		if err = tx.QueryRow("SELECT id FROM films WHERE TRIM(douban_id) = TRIM(?)", newDouban).Scan(&existingID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+		err = nil
+	}
+	if !existingID.Valid && newImdb != "" {
+		if err = tx.QueryRow("SELECT id, douban_id FROM films WHERE TRIM(imdb_id) = TRIM(?) COLLATE NOCASE", newImdb).Scan(&existingID, &existingDouban); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+		err = nil
+		if existingID.Valid && newDouban != "" && existingDouban.Valid && existingDouban.String != "" && newDouban != existingDouban.String {
+			existingID = sql.NullInt64{} // 豆瓣冲突：不同影视
+		}
+	}
+	if !existingID.Valid {
+		if err = tx.QueryRow("SELECT id, imdb_id, douban_id FROM films WHERE TRIM(name) = TRIM(?) COLLATE NOCASE", nameStr).Scan(&existingID, &existingImdb, &existingDouban); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+		err = nil
+		imdbConflict := existingID.Valid && newImdb != "" && existingImdb.Valid && existingImdb.String != "" && newImdb != existingImdb.String
+		doubanConflict := existingID.Valid && newDouban != "" && existingDouban.Valid && existingDouban.String != "" && newDouban != existingDouban.String
+		if imdbConflict || doubanConflict {
+			existingID = sql.NullInt64{}
+		}
+	}
+
+	if existingID.Valid {
+		// 复用已有影视：回填影视级缺失字段（原值为 NULL 且新值非空时生效）
+		sets := []string{}
+		args := []interface{}{}
+		for _, k := range filmFieldWhiteList {
+			if k == "name" {
+				continue
+			}
+			v, ok := body[k]
+			if !ok || v == nil {
+				continue
+			}
+			sets = append(sets, fmt.Sprintf("%s = COALESCE(%s, ?)", k, k))
+			args = append(args, filmValue(k, v))
+		}
+		if len(sets) > 0 {
+			args = append(args, existingID.Int64)
+			if _, err = tx.Exec("UPDATE films SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+				return 0, err
+			}
+		}
+		filmID = existingID.Int64
+	} else {
+		// 新建影视
+		cols := []string{"name"}
+		args := []interface{}{nameStr}
+		for _, k := range filmFieldWhiteList {
+			if k == "name" {
+				continue
+			}
+			if v, ok := body[k]; ok {
+				cols = append(cols, k)
+				args = append(args, filmValue(k, v))
+			}
+		}
+		placeholders := make([]string, len(cols))
+		for i := range placeholders {
+			placeholders[i] = "?"
+		}
+		var res sql.Result
+		if res, err = tx.Exec("INSERT INTO films ("+strings.Join(cols, ", ")+") VALUES ("+strings.Join(placeholders, ", ")+")", args...); err != nil {
+			return 0, err
+		}
+		if filmID, err = res.LastInsertId(); err != nil {
+			return 0, err
+		}
+	}
+
+	// 插入观看记录
+	vcols := []string{"film_id"}
+	vargs := []interface{}{filmID}
+	for _, k := range viewingFieldWhiteList {
+		if v, ok := body[k]; ok {
+			vcols = append(vcols, k)
+			vargs = append(vargs, viewingValue(k, v))
+		}
+	}
+	vph := make([]string, len(vcols))
+	for i := range vph {
+		vph[i] = "?"
+	}
+	if _, err = tx.Exec("INSERT INTO viewings ("+strings.Join(vcols, ", ")+") VALUES ("+strings.Join(vph, ", ")+")", vargs...); err != nil {
+		return 0, err
+	}
+
+	err = tx.Commit()
+	return filmID, err
 }
 
-// UpdateFilm 编辑观看记录，返回是否有字段更新（PUT /api/films/:id）。
+// UpdateFilm 编辑影视信息（films 表字段），返回是否有字段更新（PUT /api/films/:id）。
 func (d *DB) UpdateFilm(id int64, fields map[string]interface{}) (bool, error) {
 	sets := []string{}
 	args := []interface{}{}
@@ -561,20 +719,37 @@ func (d *DB) UpdateFilm(id int64, fields map[string]interface{}) (bool, error) {
 		if !ok {
 			continue
 		}
-		var val interface{}
-		if filmIntFields[k] {
-			val = toInt64(v)
-		} else {
-			val = toText(v)
-		}
 		sets = append(sets, fmt.Sprintf("%s = ?", k))
-		args = append(args, val)
+		args = append(args, filmValue(k, v))
 	}
 	if len(sets) == 0 {
 		return false, nil
 	}
 	args = append(args, id)
 	q := "UPDATE films SET " + strings.Join(sets, ", ") + " WHERE id = ?"
+	if _, err := d.db.Exec(q, args...); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// UpdateViewing 编辑观看记录（viewings 表字段），返回是否有字段更新（PUT /api/viewings/:id）。
+func (d *DB) UpdateViewing(id int64, fields map[string]interface{}) (bool, error) {
+	sets := []string{}
+	args := []interface{}{}
+	for _, k := range viewingFieldWhiteList {
+		v, ok := fields[k]
+		if !ok {
+			continue
+		}
+		sets = append(sets, fmt.Sprintf("%s = ?", k))
+		args = append(args, viewingValue(k, v))
+	}
+	if len(sets) == 0 {
+		return false, nil
+	}
+	args = append(args, id)
+	q := "UPDATE viewings SET " + strings.Join(sets, ", ") + " WHERE id = ?"
 	if _, err := d.db.Exec(q, args...); err != nil {
 		return false, err
 	}
@@ -733,7 +908,7 @@ func (d *DB) DeleteMetadata(filmID int64) (ImageLocals, error) {
 	return locals, nil
 }
 
-// DeleteFilm 删除整条观影记录（含元数据行），返回原本地图片文件名供删图。
+// DeleteFilm 删除整部影视（含全部观看记录与元数据行），返回原本地图片文件名供删图。
 func (d *DB) DeleteFilm(filmID int64) (ImageLocals, error) {
 	locals, err := d.GetExistingLocals(filmID)
 	if err != nil {
@@ -742,10 +917,78 @@ func (d *DB) DeleteFilm(filmID int64) (ImageLocals, error) {
 	if _, err := d.db.Exec("DELETE FROM film_metadata WHERE film_id = ?", filmID); err != nil {
 		return ImageLocals{}, err
 	}
+	if _, err := d.db.Exec("DELETE FROM viewings WHERE film_id = ?", filmID); err != nil {
+		return ImageLocals{}, err
+	}
 	if _, err := d.db.Exec("DELETE FROM films WHERE id = ?", filmID); err != nil {
 		return ImageLocals{}, err
 	}
 	return locals, nil
+}
+
+// DeleteViewing 删除单条观看记录（DELETE /api/viewings/:id）。
+// 若为该影视最后一条，则连同影视与元数据一并删除；
+// 返回（是否删除了整个影视, 待删除的本地图片）。found=false 表示记录不存在。
+func (d *DB) DeleteViewing(id int64) (found, filmDeleted bool, locals ImageLocals, err error) {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return false, false, ImageLocals{}, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var filmID int64
+	err = tx.QueryRow("SELECT film_id FROM viewings WHERE id = ?", id).Scan(&filmID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, false, ImageLocals{}, nil
+		}
+		return false, false, ImageLocals{}, err
+	}
+
+	if _, err = tx.Exec("DELETE FROM viewings WHERE id = ?", id); err != nil {
+		return false, false, ImageLocals{}, err
+	}
+
+	var remaining int64
+	if err = tx.QueryRow("SELECT COUNT(*) FROM viewings WHERE film_id = ?", filmID).Scan(&remaining); err != nil {
+		return false, false, ImageLocals{}, err
+	}
+
+	if remaining == 0 {
+		// 最后一条观看记录被删除：连同影视与元数据一并删除
+		var poster, backdrop sql.NullString
+		if err = tx.QueryRow("SELECT poster_local, backdrop_local FROM film_metadata WHERE film_id = ?", filmID).Scan(&poster, &backdrop); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return false, false, ImageLocals{}, err
+		}
+		err = nil
+		if poster.Valid {
+			s := poster.String
+			locals.Poster = &s
+		}
+		if backdrop.Valid {
+			s := backdrop.String
+			locals.Backdrop = &s
+		}
+		if _, err = tx.Exec("DELETE FROM film_metadata WHERE film_id = ?", filmID); err != nil {
+			return false, false, ImageLocals{}, err
+		}
+		if _, err = tx.Exec("DELETE FROM films WHERE id = ?", filmID); err != nil {
+			return false, false, ImageLocals{}, err
+		}
+		if err = tx.Commit(); err != nil {
+			return false, false, ImageLocals{}, err
+		}
+		return true, true, locals, nil
+	}
+
+	if err = tx.Commit(); err != nil {
+		return false, false, ImageLocals{}, err
+	}
+	return true, false, ImageLocals{}, nil
 }
 
 // UpdateRatings 刷新评分（POST /api/ratings/refresh 内单条更新）。
