@@ -9,5 +9,4 @@ docker-data/
 .gitignore
 *.md
 Dockerfile
-docker-compose.yml
 .dockerignore

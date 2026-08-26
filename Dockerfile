@@ -24,6 +24,14 @@ ENV PORT=8686
 ENV DB_PATH=/app/data/films.db
 ENV IMAGES_DIR=/app/data/images
 
+# 关键修复：debian:bookworm-slim(minbase) 默认不含 ca-certificates。
+# Go 后端用默认 http.Client 调用 TMDB HTTPS 接口，缺少根证书会导致
+# TLS 握手失败（x509: certificate signed by unknown authority），
+# 表现为“容器内刮削/搜索元数据无任何结果”。安装 CA 证书即可修复。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # 后端二进制（自包含，无需任何运行时依赖）
 COPY --from=go-build /out/server /app/server
 # 前端构建产物（由 Go 后端静态托管 + SPA 兜底）

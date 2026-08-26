@@ -1,0 +1,32 @@
+# film-memo 生产部署（对应 README 的 `docker compose up -d --build`）
+#
+# 本文件修复“Docker 内刮削元数据无结果”的两个根因：
+#   1) 镜像运行时已安装 ca-certificates（见 Dockerfile），使 Go 能校验 TMDB 的 HTTPS 证书；
+#   2) 挂载宿主机 .env 到容器 /app/.env（只读），应用启动时自动读取
+#      TMDB_ACCESS_TOKEN / TMDB_API_KEY（与本地开发行为一致）。
+#      注意：.env 中的 DB_PATH / IMAGES_DIR / PORT 不会覆盖镜像内由 Dockerfile 设定的值，
+#      因此容器仍使用 /app/data 下的路径，无需手动改 .env。
+#
+# 数据持久化：宿主 ./docker-data 挂载到容器 /app/data
+# 端口：宿主 8686 -> 容器 8686
+
+services:
+  film-memo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: film-memo:latest
+    container_name: film-memo
+    restart: unless-stopped
+    ports:
+      - "8686:8686"
+    environment:
+      # 显式声明容器内环境（与 Dockerfile 一致，便于覆盖）
+      PORT: "8686"
+      DB_PATH: "/app/data/films.db"
+      IMAGES_DIR: "/app/data/images"
+    volumes:
+      # TMDB 凭证：只读挂载，绝不写入镜像
+      - ./.env:/app/.env:ro
+      # 数据库与图片持久化
+      - ./docker-data:/app/data

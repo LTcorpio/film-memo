@@ -118,13 +118,23 @@ npm start           # 启动后端，同时静态托管前端
 ## Docker 部署
 
 ```bash
-# 确保 .env 中已配置 TMDB 凭证
+# 1) 编辑 .env，至少填写 TMDB 凭证（二选一）：
+#    TMDB_ACCESS_TOKEN=...   # v4 Bearer Token（推荐）
+#    TMDB_API_KEY=...        # v3 API Key
+# 2) 构建并启动
 docker compose up -d --build
 ```
 
-- 服务端口：`8686`
-- 数据持久化：`docker-data/db/`（数据库）、`docker-data/images/`（图片）
+- 服务端口：`8686`（宿主 8686 → 容器 8686）
+- TMDB 凭证：由 `docker-compose.yml` 将宿主 `.env` 只读挂载到容器 `/app/.env`，应用启动时自动加载，**无需**把密钥写进镜像或命令行
+- 数据持久化：宿主 `./docker-data/`（数据库 `films.db` 与图片 `images/`）挂载到容器 `/app/data`
+- 手动运行（不用 compose）等价于：
+  `docker run -d -p 8686:8686 -v "$(pwd)/.env:/app/.env:ro" -v "$(pwd)/docker-data:/app/data" film-memo:latest`
 - 停止：`docker compose down`（数据保留）
+
+> 排障：若容器内刮削元数据无结果，先 `docker logs film-memo` 查看启动日志。
+> - 出现 `TMDB 凭证: 未配置` → 未挂载 `.env` 或其中缺少 TMDB 凭证；
+> - 出现 `x509: certificate signed by unknown authority` → 镜像缺少 CA 证书（已在本仓库 Dockerfile 修复，请重新 `--build`）。
 
 ## 功能概览
 
