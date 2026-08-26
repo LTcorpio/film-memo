@@ -14,23 +14,23 @@ COPY server-go/go.mod server-go/go.sum ./
 RUN go mod download
 # 再拷源码编译
 COPY server-go/ ./
-# modernc.org/sqlite 为纯 Go，CGO_ENABLED=0 可静态编译，产物更小、无动态链接
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+# modernc.org/sqlite 为纯 Go，CGO_ENABLED=0 可静态编译，产物更小、无动态链接。
+# -tags timetzdata 将时区数据库编入二进制，避免运行时镜像（alpine/debian 均缺 tzdata）再装包。
+RUN CGO_ENABLED=0 go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/server ./cmd/server
 
-# ===== Stage 3: 运行时（仅静态二进制 + 前端产物，无 Node 运行时） =====
-FROM debian:bookworm-slim AS runtime
+# ===== Stage 3: 运行时（alpine，纯静态二进制，镜像更小、攻击面更小） =====
+# 选用 alpine 的前提：后端为 CGO_ENABLED=0 静态编译，不依赖 glibc，
+# 故 musl libc 完全兼容，无 cgo 兼容性风险。
+FROM alpine:3.20 AS runtime
 WORKDIR /app
 ENV PORT=8686
 ENV DB_PATH=/app/data/films.db
 ENV IMAGES_DIR=/app/data/images
 
-# 关键修复：debian:bookworm-slim(minbase) 默认不含 ca-certificates。
-# Go 后端用默认 http.Client 调用 TMDB HTTPS 接口，缺少根证书会导致
-# TLS 握手失败（x509: certificate signed by unknown authority），
-# 表现为“容器内刮削/搜索元数据无任何结果”。安装 CA 证书即可修复。
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# CA 证书：alpine 官方镜像默认已含 ca-certificates（apk 自身依赖 HTTPS 拉包），
+# 此处保留为防御性保险——若将来改用更精简的基础镜像，仍需显式安装，否则
+# Go 用默认 http.Client 调 TMDB HTTPS 会因 x509: unknown authority 失败，刮削无结果。
+RUN apk add --no-cache ca-certificates
 
 # 后端二进制（自包含，无需任何运行时依赖）
 COPY --from=go-build /out/server /app/server
