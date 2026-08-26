@@ -117,24 +117,27 @@ npm start           # 启动后端，同时静态托管前端
 
 ## Docker 部署
 
+镜像与运行分离：先单独构建镜像，再用 compose 启动。
+
 ```bash
-# 1) 编辑 .env，至少填写 TMDB 凭证（二选一）：
+# 1) 编辑项目根目录 .env，至少填写 TMDB 凭证（二选一）：
 #    TMDB_ACCESS_TOKEN=...   # v4 Bearer Token（推荐）
 #    TMDB_API_KEY=...        # v3 API Key
-# 2) 构建并启动
-docker compose up -d --build
+# 2) 构建镜像（运行时已含 ca-certificates，可正常访问 TMDB HTTPS）
+docker build -t film-memo:latest .
+# 3) 启动（凭证经 ${TMDB_*} 由 .env 注入为环境变量）
+docker compose up -d
 ```
 
 - 服务端口：`8686`（宿主 8686 → 容器 8686）
-- TMDB 凭证：由 `docker-compose.yml` 将宿主 `.env` 只读挂载到容器 `/app/.env`，应用启动时自动加载，**无需**把密钥写进镜像或命令行
-- 数据持久化：宿主 `./docker-data/`（数据库 `films.db` 与图片 `images/`）挂载到容器 `/app/data`
-- 手动运行（不用 compose）等价于：
-  `docker run -d -p 8686:8686 -v "$(pwd)/.env:/app/.env:ro" -v "$(pwd)/docker-data:/app/data" film-memo:latest`
+- TMDB 凭证：compose 默认读取同目录 `.env`，经 `TMDB_ACCESS_TOKEN` / `TMDB_API_KEY` 环境变量注入容器，应用通过 `os.Getenv` 读取（**不**会把密钥写进镜像或命令行）
+- 数据持久化：宿主 OneDrive 目录（`DockerData/film-memo/db`、`DockerData/film-memo/images`）分别挂载到容器 `/app/data/db`、`/app/data/images`
+- 重启策略：`restart: "no"`，按需手动 `docker compose up`；停止后不自动重启
 - 停止：`docker compose down`（数据保留）
 
-> 排障：若容器内刮削元数据无结果，先 `docker logs film-memo` 查看启动日志。
-> - 出现 `TMDB 凭证: 未配置` → 未挂载 `.env` 或其中缺少 TMDB 凭证；
-> - 出现 `x509: certificate signed by unknown authority` → 镜像缺少 CA 证书（已在本仓库 Dockerfile 修复，请重新 `--build`）。
+> 排障：若容器内刮削/搜索元数据无结果，先 `docker logs film-memo` 查看启动日志。
+> - 出现 `TMDB 凭证: 未配置` → 项目根目录 `.env` 缺失或其中未填 TMDB 凭证（compose 变量替换失败）；
+> - 出现 `x509: certificate signed by unknown authority` → 镜像缺少 CA 证书，请用上面的 `docker build` 重新构建镜像。
 
 ## 功能概览
 
