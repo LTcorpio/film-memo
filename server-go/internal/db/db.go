@@ -18,6 +18,7 @@ import (
 // DB 包装 *sql.DB，承载所有数据访问方法。
 type DB struct {
 	db        *sql.DB
+	path      string // 数据库文件路径，关闭时用于清理 -wal/-shm 临时文件
 	imagesDir string // 迁移去重时删除被合并影片的本地图片
 }
 
@@ -137,7 +138,7 @@ func Open(path, imagesDir string) (*DB, error) {
 		conn.Close()
 		return nil, err
 	}
-	d := &DB{db: conn, imagesDir: imagesDir}
+	d := &DB{db: conn, path: path, imagesDir: imagesDir}
 	if err := d.migrate(); err != nil {
 		conn.Close()
 		return nil, err
@@ -145,8 +146,39 @@ func Open(path, imagesDir string) (*DB, error) {
 	return d, nil
 }
 
-// Close 关闭连接。
-func (d *DB) Close() error { return d.db.Close() }
+// Checkpoint 将 WAL 日志合并回主库并截断为 0 字节（数据落盘）。
+// 应在关闭连接前调用，保证主库文件是最新完整状态。
+func (d *DB) Checkpoint() error {
+	if _, err := d.db.Exec("PRAGMA wal_checkpoint(TRUNCATE);"); err != nil {
+		return fmt.Errorf("wal checkpoint: %w", err)
+	}
+	return nil
+}
+
+// Close 停机收尾：先 WAL checkpoint 落盘，再关闭连接，最后清理可能残留的
+// -wal/-shm 临时文件。连接正常关闭时 SQLite 会自行删除这两个文件，此处
+// 兜底删除只作为防御（例如驱动池化连接未触发干净关闭），确保停止服务后
+// 数据目录（OneDrive 同步目录）不遗留临时文件。
+// 仅在 checkpoint 与关闭均成功后才执行兜底删除：此时 WAL 已截断为空，
+// 删除不会丢失任何已提交数据；若仍有其他进程持有该库，文件被占用时
+// 删除失败会被静默忽略，不影响数据安全。
+func (d *DB) Close() error {
+	if d.db == nil {
+		return nil
+	}
+	cpErr := d.Checkpoint()
+	closeErr := d.db.Close()
+	if cpErr != nil || closeErr != nil {
+		return errors.Join(cpErr, closeErr)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		tmp := d.path + suffix
+		if err := os.Remove(tmp); err == nil {
+			log.Printf("[db] 已清理临时文件 %s", tmp)
+		}
+	}
+	return nil
+}
 
 // DB 暴露底层 *sql.DB，供命令行脚本（Excel 导入事务等）使用。
 func (d *DB) DB() *sql.DB { return d.db }
