@@ -11,44 +11,45 @@ import FilmForm, { filmToForm, filmFormToPatches, episodeUnit, DateInput } from 
 
 const ICON_BASE = '/icon';
 
-/** 影视简介：长文自动截断，点击展开/收起 */
+/** 影视简介：默认 3 行高度，内容过长时区域内滚动（自绘滚动条，避免原生滚动条出现白块） */
 function Overview({ text }) {
-  const [expanded, setExpanded] = useState(false);
-  const [clamped, setClamped] = useState(false);
-  const ref = useRef(null);
+  const viewRef = useRef(null);
+  // 滑块位置 { height, top }，单位 px；null = 内容不超限，不显示
+  const [thumb, setThumb] = useState(null);
+
+  const update = () => {
+    const el = viewRef.current;
+    if (!el) return;
+    const { scrollHeight, clientHeight, scrollTop } = el;
+    if (scrollHeight <= clientHeight + 1) {
+      setThumb(null);
+      return;
+    }
+    const h = Math.max(20, (clientHeight / scrollHeight) * clientHeight);
+    const maxScroll = scrollHeight - clientHeight;
+    const top = maxScroll > 0 ? (scrollTop / maxScroll) * (clientHeight - h) : 0;
+    setThumb({ height: h, top });
+  };
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.maxHeight = 'none';
-    const fullHeight = el.scrollHeight;
-    el.style.maxHeight = '';
-    // 收起态高度由 CSS max-height 控制，3 行约 1.7em * 3
-    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 22;
-    const visibleHeight = lineHeight * 3 + 4;
-    setClamped(fullHeight > visibleHeight + 2);
+    update();
+    const el = viewRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [text]);
 
   return (
     <div className="overview-wrap">
-      {clamped && !expanded && (
-        <button
-          type="button"
-          className="overview-toggle inline-end"
-          onClick={() => setExpanded(true)}
-        >
-          展开 <Icon name="chevron" size={12} />
-        </button>
-      )}
-      <p ref={ref} className={`overview${expanded ? ' expanded' : ''}`}>{text}</p>
-      {clamped && expanded && (
-        <button
-          type="button"
-          className="overview-toggle floated"
-          onClick={() => setExpanded(false)}
-        >
-          收起 <Icon name="chevron-up" size={12} />
-        </button>
+      <p ref={viewRef} className="overview" onScroll={update}>{text}</p>
+      {thumb && (
+        <div className="overview-scrollbar" aria-hidden="true">
+          <div
+            className="overview-thumb"
+            style={{ height: thumb.height, transform: `translateY(${thumb.top}px)` }}
+          />
+        </div>
       )}
     </div>
   );

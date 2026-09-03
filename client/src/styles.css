@@ -1103,48 +1103,34 @@ body {
 }
 
 .overview-wrap {
+  position: relative;
   margin: 0 0 16px;
-  overflow: hidden;
 }
 .overview {
   color: var(--text-dim);
   margin: 0;
   line-height: 1.7;
-  /* 收起态：限制 3 行高度 */
+  /* 限制 3 行高度，内容过长时区域内滚动；原生滚动条全局隐藏，改用自绘滚动条 */
   max-height: calc(1.7em * 3 + 4px);
-  overflow: hidden;
+  overflow-y: auto;
+  padding-right: 8px;
 }
-.overview.expanded {
-  max-height: none;
-  overflow: visible;
+/* 自绘滚动条：贴在简介右侧的细轨道 + 滑块，不参与交互 */
+.overview-scrollbar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 4px;
+  pointer-events: none;
 }
-/* 收起态：按钮在 <p> 之前浮动，margin-top 推到第 3 行末尾 */
-.overview-toggle.inline-end {
-  float: right;
-  margin-top: calc(1.7em * 2);
-  margin-left: 8px;
-  line-height: 1.7em;
+.overview-thumb {
+  width: 100%;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.15s;
 }
-/* 展开态：按钮在 <p> 之后浮动到文字末尾 */
-.overview-toggle.floated {
-  float: right;
-  margin-top: 8px;
-  margin-left: 8px;
-}
-.overview-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0 8px;
-  background: var(--bg-elev2);
-  color: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 12px;
-  vertical-align: middle;
-  cursor: pointer;
-}
-.overview-toggle:hover { background: rgba(79, 158, 255, 0.15); }
+.overview-wrap:hover .overview-thumb { background: var(--text-dim); }
 
 .watch-info {
   display: flex;
