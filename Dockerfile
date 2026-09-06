@@ -24,7 +24,8 @@ RUN CGO_ENABLED=0 go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/s
 FROM alpine:3.20 AS runtime
 WORKDIR /app
 ENV PORT=8686
-ENV DB_PATH=/app/data/films.db
+# 数据库/图片默认路径与 compose 挂载点一致（compose 将 DockerData/film-memo/db 挂到 /app/data/db）
+ENV DB_PATH=/app/data/db/films.db
 ENV IMAGES_DIR=/app/data/images
 
 # CA 证书：alpine 官方镜像默认已含 ca-certificates（apk 自身依赖 HTTPS 拉包），

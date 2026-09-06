@@ -20,17 +20,11 @@ services:
     # 只在需要时启动：容器停止后不会自动重启，需手动 docker compose up
     restart: "no"
     volumes:
-      # 数据库
+      # 数据库目录（库文件 films.db 落在 /app/data/db 下，镜像内置默认 DB_PATH 即指向此处）
       - /Users/ltcorpio/Library/CloudStorage/OneDrive-Personal/DockerData/film-memo/db:/app/data/db
       # TMDB 海报/背景图
       - /Users/ltcorpio/Library/CloudStorage/OneDrive-Personal/DockerData/film-memo/images:/app/data/images
     environment:
-      - NODE_ENV=production
-      - PORT=8686
-      # 数据库文件路径指向挂载目录
-      - DB_PATH=/app/data/db/films.db
-      # 图片目录（与上方挂载一致）
-      - IMAGES_DIR=/app/data/images
       # TMDB 凭证从 .env 自动注入（docker compose 默认读取同目录 .env）
       - TMDB_ACCESS_TOKEN=${TMDB_ACCESS_TOKEN:-}
       - TMDB_API_KEY=${TMDB_API_KEY:-}
