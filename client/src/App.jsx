@@ -488,6 +488,16 @@ function AddFilmModal({ onClose, onCreated }) {
   const [form, setForm] = useState(emptyFilmForm());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [confirmClose, setConfirmClose] = useState(false);
+
+  // 与初始空表单比对，判断是否有未保存的填写
+  const isDirty = JSON.stringify(form) !== JSON.stringify(emptyFilmForm());
+
+  const handleOverlayClose = () => {
+    if (busy) return;
+    if (isDirty) setConfirmClose(true);
+    else onClose();
+  };
 
   const save = async () => {
     if (!form.name?.trim()) {
@@ -509,7 +519,8 @@ function AddFilmModal({ onClose, onCreated }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <>
+    <div className="modal-overlay" onClick={handleOverlayClose}>
       <div className="modal add-film-modal" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
         <h3><Icon name="plus" size={16} /> 新增观影记录</h3>
@@ -521,10 +532,25 @@ function AddFilmModal({ onClose, onCreated }) {
               <Icon name="save" size={14} /> {busy ? '保存中…' : '保存'}
             </button>
             <button className="btn-secondary" disabled={busy} onClick={onClose}>取消</button>
+            {isDirty && (
+              <span className="editor-dirty-hint"><Icon name="alert" size={12} /> 有未保存修改</span>
+            )}
           </div>
         </div>
       </div>
     </div>
+
+    <ConfirmDialog
+      open={confirmClose}
+      title="有未保存的修改"
+      message="关闭后将丢失当前填写的内容，确定要关闭吗？"
+      confirmText="放弃修改"
+      cancelText="继续编辑"
+      danger
+      onConfirm={onClose}
+      onCancel={() => setConfirmClose(false)}
+    />
+    </>
   );
 }
 

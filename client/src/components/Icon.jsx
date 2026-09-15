@@ -4,16 +4,11 @@
  * 所有图标 24x24 viewBox，继承 currentColor，stroke 风格统一。
  */
 const PATHS = {
-  // 顶部标题：胶片
+  // 顶部标题：胶片（lucide:film）
   film: (
     <>
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <line x1="7" y1="4" x2="7" y2="20" />
-      <line x1="17" y1="4" x2="17" y2="20" />
-      <line x1="3" y1="9" x2="7" y2="9" />
-      <line x1="3" y1="14" x2="7" y2="14" />
-      <line x1="17" y1="9" x2="21" y2="9" />
-      <line x1="17" y1="14" x2="21" y2="14" />
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M7 3v18M3 7.5h4M3 12h18M3 16.5h4M17 3v18m0-13.5h4m-4 9h4" />
     </>
   ),
   // 错误提示

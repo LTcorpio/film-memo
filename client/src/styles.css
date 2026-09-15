@@ -218,6 +218,11 @@ body {
   align-items: center;
   gap: 8px;
 }
+.add-film-modal .detail-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+  padding-top: 16px;
+}
 
 /* Category breakdown — 小卡片 */
 .cat-cards {
@@ -775,13 +780,13 @@ body {
   font-style: normal;
   font-size: 10px;
   line-height: 1;
-  padding: 2px 4px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-weight: 600;
 }
-.date-tag.start { color: #6ee7a0; border-color: rgba(110, 231, 160, 0.4); }
-.date-tag.end { color: var(--amber); border-color: rgba(255, 191, 87, 0.4); }
-.date-tag.placeholder { color: var(--text-dim); opacity: 0.5; }
+.date-tag.start { color: var(--green); background: rgba(52, 199, 89, 0.16); }
+.date-tag.end { color: var(--amber); background: rgba(255, 176, 32, 0.18); }
+.date-tag.placeholder { color: var(--text-dim); background: rgba(154, 160, 176, 0.16); }
 
 /* 占位符 */
 .row-dim { color: var(--text-dim); font-size: 12px; }
@@ -876,7 +881,7 @@ body {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   background: var(--bg-elev);
-  padding: 12px 20px;
+  padding: 16px 20px;
 }
 .modal-close {
   position: absolute;
@@ -1225,6 +1230,16 @@ body {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+/* 底部操作栏最右侧的未保存修改提示 */
+.editor-dirty-hint {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--amber);
+  white-space: nowrap;
 }
 .meta-hint { color: var(--text-dim); font-size: 12px; margin-left: auto; }
 /* 海报下方元数据提示：贴底，与右侧信息区底部对齐 */

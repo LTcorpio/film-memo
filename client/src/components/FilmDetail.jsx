@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   updateFilm, updateViewing, updateMeta, createFilm, deleteViewing,
   uploadImage, scrapeImage, deleteImage,
@@ -150,6 +150,24 @@ function MetaInfo({ meta, film }) {
       {items.length === 0 && toggle}
     </dl>
   );
+}
+
+/** 元数据 → 编辑表单数据 */
+function metaToForm(m) {
+  return {
+    title: m?.title || '',
+    originalTitle: m?.originalTitle || '',
+    genres: (m?.genres || []).join(', '),
+    runtime: m?.runtime ?? '',
+    voteAverage: m?.voteAverage ?? '',
+    mediaType: m?.mediaType || '',
+    overview: m?.overview || '',
+    directors: (m?.directors || []).join(', '),
+    cast: (m?.cast || []).join(', '),
+    releaseDate: m?.releaseDate || '',
+    status: m?.status || '',
+    tagline: m?.tagline || '',
+  };
 }
 
 /** 元数据编辑表单 */
@@ -325,6 +343,10 @@ export default function FilmDetail({
   const draftSeqRef = useRef(-1);
   // 移除确认弹窗
   const [removeConfirm, setRemoveConfirm] = useState(false);
+  // 关闭前存在未保存修改的确认弹窗
+  const [closeConfirm, setCloseConfirm] = useState(false);
+  // 进入编辑时的原始数据快照，用于精确判断是否有未保存修改
+  const pristineRef = useRef(null);
   const meta = film.metadata;
   const filmId = film.filmId ?? film.id;
 
@@ -371,20 +393,9 @@ export default function FilmDetail({
     setStagedAdds([]);
     setStagedRemoveIds([]);
     setFilmForm(filmToForm(film, viewing));
-    setMetaForm({
-      title: meta?.title || '',
-      originalTitle: meta?.originalTitle || '',
-      genres: (meta?.genres || []).join(', '),
-      runtime: meta?.runtime ?? '',
-      voteAverage: meta?.voteAverage ?? '',
-      mediaType: meta?.mediaType || '',
-      overview: meta?.overview || '',
-      directors: (meta?.directors || []).join(', '),
-      cast: (meta?.cast || []).join(', '),
-      releaseDate: meta?.releaseDate || '',
-      status: meta?.status || '',
-      tagline: meta?.tagline || '',
-    });
+    setMetaForm(metaToForm(meta));
+    // 记录原始数据快照，供精确比对未保存修改
+    pristineRef.current = { film, viewings, meta };
   };
 
   const cancelEdit = () => {
@@ -466,6 +477,23 @@ export default function FilmDetail({
   const currentViewingId = filmForm?.viewingId ?? editingViewingId;
   const viewingRemoved = currentViewingId != null && currentViewingId >= 0
     && stagedRemoveIds.includes(currentViewingId);
+
+  // 精确判断是否有未保存修改：与进入编辑时的原始快照逐项比对
+  const dirty = useMemo(() => {
+    if (!editing) return false;
+    if (stagedAdds.length > 0 || stagedRemoveIds.length > 0) return true;
+    if (!filmForm || !metaForm) return false;
+    const p = pristineRef.current;
+    if (!p) return false;
+    // 元数据字段比对
+    if (JSON.stringify(metaForm) !== JSON.stringify(metaToForm(p.meta))) return true;
+    // 影视级 + 当前观看记录字段比对
+    const pristineViewing = p.viewings.find((v) => v.id === filmForm.viewingId);
+    if (pristineViewing && JSON.stringify(filmForm) !== JSON.stringify(filmToForm(p.film, pristineViewing))) {
+      return true;
+    }
+    return false;
+  }, [editing, filmForm, metaForm, stagedAdds, stagedRemoveIds]);
 
   // 切换正在编辑的观看记录：写回当前草稿的编辑值，保留影视级字段的未保存修改
   const switchToViewing = (target) => {
@@ -576,9 +604,15 @@ export default function FilmDetail({
     // 无任何剩余记录时不切换：表单停留在已标记移除的记录上，字段禁用并显示提示
   };
 
+  // 点击遮罩关闭：编辑中存在未保存修改时先二次确认
+  const handleOverlayClose = () => {
+    if (editing && dirty) setCloseConfirm(true);
+    else onClose();
+  };
+
   return (
     <>
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleOverlayClose}>
       <div className="modal film-detail" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
 
@@ -763,6 +797,9 @@ export default function FilmDetail({
                 <Icon name="save" size={14} /> {busy ? '保存中…' : '保存'}
               </button>
               <button className="btn-secondary" disabled={busy} onClick={cancelEdit}>取消</button>
+              {dirty && (
+                <span className="editor-dirty-hint"><Icon name="alert" size={12} /> 有未保存修改</span>
+              )}
             </div>
           </div>
         )}
@@ -790,6 +827,17 @@ export default function FilmDetail({
       danger
       onConfirm={doRemoveViewing}
       onCancel={() => setRemoveConfirm(false)}
+    />
+
+    <ConfirmDialog
+      open={closeConfirm}
+      title="有未保存的修改"
+      message="关闭后将丢失未保存的修改，确定要关闭吗？"
+      confirmText="放弃修改"
+      cancelText="继续编辑"
+      danger
+      onConfirm={onClose}
+      onCancel={() => setCloseConfirm(false)}
     />
     </>
   );
