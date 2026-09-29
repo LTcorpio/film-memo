@@ -8,13 +8,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"film-memo/internal/api"
 	"film-memo/internal/config"
 	"film-memo/internal/db"
+	"film-memo/internal/douban"
 	"film-memo/internal/image"
+	"film-memo/internal/imdb"
 	"film-memo/internal/tmdb"
 )
 
@@ -29,12 +32,17 @@ func main() {
 
 	tc := tmdb.NewClient(cfg.TmdbAccessToken, cfg.TmdbAPIKey)
 
+	// IMDb 官方数据集缓存在数据库同级目录（随数据卷持久化）
+	datasetDir := filepath.Join(filepath.Dir(cfg.DBPath), "datasets")
+	imdbStore := imdb.NewStore(datasetDir)
+	doubanClient := douban.NewClient()
+
 	imgs, err := image.NewStore(cfg.ImagesDir)
 	if err != nil {
 		log.Fatalf("创建图片目录失败: %v", err)
 	}
 
-	srv := api.New(cfg, d, tc, imgs)
+	srv := api.New(cfg, d, tc, imdbStore, doubanClient, imgs)
 	httpSrv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           srv.Handler(),
@@ -65,6 +73,7 @@ func main() {
 	select {
 	case err := <-serveErr:
 		// 启动失败：先落盘关闭数据库，再退出
+		srv.StopJobs()
 		_ = d.Close()
 		log.Fatalf("服务启动失败: %v", err)
 	case sig := <-stop:
@@ -72,6 +81,8 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = httpSrv.Shutdown(ctx)
 		cancel()
+		// 取消进行中的评分刷新后台任务，避免其向随后关闭的数据库继续写入
+		srv.StopJobs()
 	}
 
 	// 显式收尾：WAL checkpoint 落盘 + 关闭连接 + 清理 -wal/-shm 临时文件

@@ -1,4 +1,4 @@
-# 影视观看记录 (Film Memo)
+# 影迹（film-memo）
 
 个人观影记录管理系统：支持 Excel 批量导入、TMDB 元数据自动刮削、海报本地化存储，提供海报网格与列表两种浏览模式，内置亮色/暗色/系统三种主题与只读模式。
 
@@ -7,10 +7,10 @@
 | 层 | 技术 |
 |---|---|
 | 前端 | React 18 + Vite 5 |
-| 后端 | Express 4 (ESM) |
-| 数据库 | SQLite (better-sqlite3) |
+| 后端 | Go 1.26（标准库 `net/http`，静态编译，同时托管前端产物） |
+| 数据库 | SQLite（[modernc.org/sqlite](https://modernc.org/sqlite) 纯 Go 驱动，`CGO_ENABLED=0`） |
 | 元数据 | [TMDB API](https://www.themoviedb.org/settings/api) |
-| 数据导入 | ExcelJS |
+| 数据导入 | [excelize](https://github.com/xuri/excelize)（Go） |
 
 ## 项目结构
 
@@ -24,14 +24,18 @@ film-memo/
 │   │   └── styles.css      # 全局样式（CSS 变量主题系统）
 │   ├── public/icon/        # 平台 LOGO（B站/爱奇艺/腾讯视频 ...）
 │   └── vite.config.js      # Vite 配置（dev 代理 /api 和 /images → localhost:4000）
-├── server/                 # 后端
-│   ├── index.js            # Express 服务 + REST API
-│   ├── db.js               # SQLite 连接与建表
-│   └── tmdb.js             # TMDB API 客户端
-├── scripts/
-│   ├── import-excel.js     # Excel → SQLite 批量导入
-│   └── scrape-metadata.js  # 按 IMDb 号批量刮削 TMDB 元数据
-├── Dockerfile              # 多阶段构建（前端 build + 后端运行）
+├── server-go/              # 后端（Go，当前主力实现）
+│   ├── cmd/server/         # HTTP 服务入口（静态托管 client/dist 并做 SPA 兜底）
+│   ├── cmd/scrape/         # 按 IMDb 号批量刮削 TMDB 元数据
+│   ├── cmd/import/         # Excel → SQLite 批量导入
+│   ├── internal/api/       # REST API 路由与处理器
+│   ├── internal/db/        # SQLite 连接、建表与查询
+│   ├── internal/tmdb/      # TMDB 客户端与字段规范化
+│   ├── internal/image/     # 海报/背景图本地存储
+│   └── internal/config/    # 环境变量与 .env 加载
+├── server/                 # 早期 Node 版后端（Express 4 ESM），保留不再迭代
+├── scripts/                # 早期 Node 版脚本（import-excel / scrape-metadata）
+├── Dockerfile              # 多阶段构建（前端 build + Go 后端编译 → alpine 运行）
 ├── .env.example            # 环境变量模板
 └── package.json
 ```
@@ -40,7 +44,8 @@ film-memo/
 
 ### 环境要求
 
-- Node.js >= 18
+- Node.js >= 18（仅前端构建需要）
+- Go >= 1.26（后端运行/编译）
 - npm
 
 ### 1. 克隆 & 安装依赖
@@ -48,8 +53,8 @@ film-memo/
 ```bash
 git clone https://github.com/LTcorpio/film-memo.git
 cd film-memo
-npm install
-cd client && npm install && cd ..
+cd client && npm install && cd ..   # 前端依赖
+cd server-go && go mod download      # Go 后端依赖
 ```
 
 ### 2. 配置环境变量
@@ -81,7 +86,7 @@ TMDB_API_KEY=your_key_here
 如果有 Excel 格式的观影记录，可批量导入：
 
 ```bash
-npm run import
+cd server-go && go run ./cmd/import
 ```
 
 ### 4. 批量刮削元数据（可选）
@@ -89,28 +94,29 @@ npm run import
 为已导入但缺少元数据的影片批量刮削 TMDB 数据：
 
 ```bash
-npm run scrape              # 仅处理缺少元数据的影片
-npm run scrape -- --force   # 强制重新刮削所有
-npm run scrape -- --id 6    # 仅处理指定 ID
+cd server-go
+go run ./cmd/scrape            # 仅处理缺少元数据、且已有 imdb_id 的影片
+go run ./cmd/scrape --force    # 强制重新刮削（覆盖已有元数据）
+go run ./cmd/scrape --id 6     # 仅处理指定 film id
 ```
 
 ### 5. 启动开发服务
 
 ```bash
-npm run dev
+cd server-go && go run ./cmd/server   # 后端 API 服务（localhost:4000）
+cd client && npm run dev              # Vite 前端开发服务（localhost:5173）
 ```
 
-该命令会同时启动：
-- 后端 API 服务（`localhost:4000`）
-- Vite 前端开发服务（`localhost:5173`，自动代理 `/api` 和 `/images` 到后端）
+前端开发服务自动代理 `/api` 和 `/images` 到后端。
 
 浏览器访问 http://localhost:5173
 
 ### 6. 生产部署
 
 ```bash
-npm run build       # 构建前端静态文件到 client/dist/
-npm start           # 启动后端，同时静态托管前端
+cd client && npm run build                         # 构建前端静态文件到 client/dist/
+cd ../server-go && go build -o server ./cmd/server # 编译 Go 后端（静态二进制）
+./server                                           # 启动后端，同时静态托管前端
 ```
 
 访问 http://localhost:4000

@@ -113,7 +113,10 @@ export default function MetaSearch({ film, onClose, onSaved }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      className="modal-overlay"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="modal meta-search" onClick={(e) => e.stopPropagation()}>
         {loading && (
           <div className="meta-search-loading">

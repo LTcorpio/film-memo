@@ -14,7 +14,9 @@ import (
 
 	"film-memo/internal/config"
 	"film-memo/internal/db"
+	"film-memo/internal/douban"
 	"film-memo/internal/image"
+	"film-memo/internal/imdb"
 	"film-memo/internal/tmdb"
 )
 
@@ -22,13 +24,16 @@ import (
 type Server struct {
 	db         *db.DB
 	tmdb       *tmdb.Client
+	imdb       *imdb.Store    // IMDb 官方数据集（评分）
+	douban     *douban.Client // 豆瓣移动端接口（评分）
 	images     *image.Store
+	jobs       *jobRegistry // 评分刷新的后台任务（同时刻仅一个）
 	clientDist string
 }
 
 // New 创建 Server。若 client/dist 存在则启用 SPA 静态托管。
-func New(cfg config.Config, d *db.DB, tc *tmdb.Client, imgs *image.Store) *Server {
-	s := &Server{db: d, tmdb: tc, images: imgs}
+func New(cfg config.Config, d *db.DB, tc *tmdb.Client, imdbStore *imdb.Store, dc *douban.Client, imgs *image.Store) *Server {
+	s := &Server{db: d, tmdb: tc, imdb: imdbStore, douban: dc, images: imgs, jobs: &jobRegistry{}}
 	dist := filepath.Join(cfg.ProjectRoot, "client", "dist")
 	if info, err := os.Stat(dist); err == nil && info.IsDir() {
 		s.clientDist = dist
@@ -67,8 +72,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/films/{id}/scrape-image", s.handleScrapeImage)
 	mux.HandleFunc("DELETE /api/films/{id}/image", s.handleDeleteImage)
 
-	// 评分刷新
+	// 评分刷新（后台任务）
 	mux.HandleFunc("POST /api/ratings/refresh", s.handleRefreshRatings)
+	mux.HandleFunc("POST /api/ratings/refresh/stop", s.handleStopRatings)
+	mux.HandleFunc("GET /api/ratings/refresh/progress", s.handleRatingProgress)
+	mux.HandleFunc("GET /api/ratings/status", s.handleRatingsStatus)
 
 	// 本地图片静态托管（maxAge 7d，immutable）
 	if s.images != nil {
@@ -200,6 +208,26 @@ func toStr(v interface{}) string {
 	return ""
 }
 
+// toInt64Slice 把 JSON 数组（或逗号分隔字符串）转为影视 id 列表，非法项忽略。
+func toInt64Slice(v interface{}) []int64 {
+	items := []interface{}{}
+	switch x := v.(type) {
+	case []interface{}:
+		items = x
+	case string:
+		for _, part := range strings.Split(x, ",") {
+			items = append(items, strings.TrimSpace(part))
+		}
+	}
+	out := []int64{}
+	for _, it := range items {
+		if p := toInt64Ptr(it); p != nil {
+			out = append(out, *p)
+		}
+	}
+	return out
+}
+
 func nowISO() string {
 	return time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
@@ -221,7 +249,7 @@ func extFromContentType(ct string) string {
 	return ".jpg"
 }
 
-// seasonToNumber 把 season 参数转为季号；nil/空字符串返回 false（对应 JS season != null && season !== ''）。
+// seasonToNumber 把 season 参数转为季号；nil/空字符串返回 false（对应 JS season != null && season !== ”）。
 func seasonToNumber(v interface{}) (int, bool) {
 	switch x := v.(type) {
 	case nil:
@@ -261,6 +289,9 @@ func buildFilterFromMap(m map[string]interface{}) db.Filter {
 	}
 	if v, ok := m["missing"]; ok {
 		f.Missing = toStr(v)
+	}
+	if v, ok := m["ids"]; ok {
+		f.IDs = toInt64Slice(v)
 	}
 	return f
 }

@@ -10,7 +10,10 @@ export default function ConfirmDialog({
 }) {
   if (!open) return null;
   return (
-    <div className="modal-overlay" onClick={busy ? undefined : onCancel}>
+    <div
+      className="modal-overlay"
+      onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}
+    >
       <div className="modal confirm-dialog" onClick={(e) => e.stopPropagation()}>
         <div className={`confirm-icon${danger ? ' danger' : ''}`}>
           <Icon name={danger ? 'alert' : 'info'} size={26} />

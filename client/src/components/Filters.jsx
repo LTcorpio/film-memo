@@ -1,6 +1,12 @@
 import Icon from './Icon.jsx';
 
-export default function Filters({ value, onChange, onReset, options, activeCount, onOpenRatings, readOnly }) {
+/** 评分刷新任务的进度百分比（total 尚未就绪时为 0） */
+function jobPercent(job) {
+  if (!job || !job.total) return 0;
+  return Math.floor((job.done / job.total) * 100);
+}
+
+export default function Filters({ value, onChange, onReset, options, activeCount, onOpenRatings, readOnly, ratingJob }) {
   const set = (k, v) => onChange({ ...value, [k]: v });
 
   return (
@@ -42,6 +48,7 @@ export default function Filters({ value, onChange, onReset, options, activeCount
             <option value="">无</option>
             <option value="imdb">无 IMDb</option>
             <option value="douban">无豆瓣 ID</option>
+            <option value="rating">待补评分</option>
           </select>
         </label>
 
@@ -66,9 +73,19 @@ export default function Filters({ value, onChange, onReset, options, activeCount
             type="button"
             className="btn-secondary btn-ratings"
             onClick={onOpenRatings}
-            title="评分管理：批量维护豆瓣 ID 与评分数据源"
+            title={
+              ratingJob?.running
+                ? '评分刷新任务正在后台运行'
+                : '评分管理：批量维护豆瓣 ID 与评分数据源'
+            }
           >
             <Icon name="star" size={14} /> 评分管理
+            {ratingJob?.running && (
+              <span className="btn-ratings-running">
+                <span className="btn-ratings-dot" />
+                {jobPercent(ratingJob)}%
+              </span>
+            )}
           </button>
         )}
       </div>

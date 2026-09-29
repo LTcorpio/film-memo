@@ -53,11 +53,12 @@ export const ALL_PLATFORMS = PLATFORMS;
 export default function PlatformTag({ name, size = 16, compact = false, className = '' }) {
   const matched = matchPlatform(name);
   if (!matched) {
-    // 未匹配到 SVG 时，复用 platform-tag 样式但不渲染图标；
-    // compact 模式下也无图标可显示，故始终显示名称，否则标签为空不可见。
+    // 未匹配到 SVG 时无图标可显示，只能退化为文本；
+    // 卡片（compact）位置狭窄，只保留前两个字，完整名称通过 title 悬浮提示。
+    const label = compact && name.length > 2 ? name.slice(0, 2) : name;
     return (
       <span className={`platform-tag platform-tag-no-logo ${className}`} title={name}>
-        <span className="platform-name">{name}</span>
+        <span className="platform-name">{label}</span>
       </span>
     );
   }

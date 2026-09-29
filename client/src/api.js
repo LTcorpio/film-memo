@@ -98,11 +98,24 @@ export const scrapeImage = (filmId, type) =>
 export const deleteImage = (filmId, type) =>
   http(`${BASE}/films/${filmId}/image?type=${type}`, { method: 'DELETE' });
 
-/** 一键刷新评分数据（按当前筛选条件批量重抓 TMDB 评分）
- *  豆瓣评分数据源尚未开发，现阶段仅刷新 TMDB。 */
-export const refreshRatings = (filters) =>
+/** 启动评分刷新后台任务（按当前筛选条件批量重抓豆瓣与 IMDb 评分）
+ *  source 传 'douban' / 'imdb' 可只刷新其中一个来源，省略则两者都刷新。
+ *  立即返回 { started, running }；已有任务运行中时 started=false，不新建任务。
+ *  实际进度通过 fetchRatingProgress 轮询。 */
+export const refreshRatings = (filters, source) =>
   http(`${BASE}/ratings/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(filters || {}),
+    body: JSON.stringify({ ...(filters || {}), ...(source ? { source } : {}) }),
   });
+
+/** 评分刷新后台任务的进度快照
+ *  { running, stopped, source, phase, done, total, startedAt, finishedAt, result, error } */
+export const fetchRatingProgress = () => http(`${BASE}/ratings/refresh/progress`);
+
+/** 停止进行中的评分刷新任务（已取到的结果照常落库）；无运行中任务时 stopped=false */
+export const stopRatings = () =>
+  http(`${BASE}/ratings/refresh/stop`, { method: 'POST' });
+
+/** 各评分数据源的最近拉取时间与统计（含 IMDb 数据集本地缓存状态） */
+export const fetchRatingStatus = () => http(`${BASE}/ratings/status`);

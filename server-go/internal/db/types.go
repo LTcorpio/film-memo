@@ -7,7 +7,8 @@ type Filter struct {
 	Platform    string
 	Category    string // "__no_meta__" 表示无元数据筛选
 	Q           string
-	Missing     string // "imdb" / "douban"
+	Missing     string  // "imdb" / "douban" / "rating"
+	IDs         []int64 // 仅处理这些影视（评分管理里手动勾选的条目）
 }
 
 // Filters 是 GET /api/filters 的响应。
@@ -37,6 +38,7 @@ type Stats struct {
 	WithoutMetadata int64      `json:"withoutMetadata"`
 	WithoutImdb     int64      `json:"withoutImdb"`
 	WithoutDouban   int64      `json:"withoutDouban"`
+	MissingRatings  int64      `json:"missingRatings"` // 待补评分：有 ID 但缺评分或缺评价人数的观看记录数
 	ByCategory      []CatStat  `json:"byCategory"`
 	ByWatchYear     []YearStat `json:"byWatchYear"`
 }
@@ -45,8 +47,39 @@ type Stats struct {
 type FilmRef struct {
 	ID        int64
 	Name      string
+	Category  string
+	ImdbID    string
+	DoubanID  string
 	TmdbID    *int64
 	MediaType string
+	// 两个来源各自是否需要重新拉取：缺评分或评价人数为 0（含无元数据行）时为 true。
+	// 刷新时只处理 Need 的来源，避免每次全量重抓。
+	DoubanNeed bool
+	ImdbNeed   bool
+}
+
+// RatingSet 是单次评分写入的字段集合：nil 表示该来源本次未取到，保持原值不变。
+type RatingSet struct {
+	DoubanRating *float64
+	DoubanVotes  *int64
+	ImdbRating   *float64
+	ImdbVotes    *int64
+}
+
+// Empty 返回该集合是否没有任何待写入字段。
+func (s RatingSet) Empty() bool {
+	return s.DoubanRating == nil && s.DoubanVotes == nil && s.ImdbRating == nil && s.ImdbVotes == nil
+}
+
+// RatingSync 记录单个评分数据源最近一次拉取的时间与结果（rating_sync 表一行）。
+type RatingSync struct {
+	Source       string  `json:"source"`       // 数据源：douban / imdb
+	LastSyncedAt *string `json:"lastSyncedAt"` // 最近一次拉取时间
+	Total        int64   `json:"total"`        // 该源覆盖的影片数
+	Updated      int64   `json:"updated"`      // 成功写入数
+	Skipped      int64   `json:"skipped"`      // 跳过数
+	Failed       int64   `json:"failed"`       // 失败数
+	Message      *string `json:"message"`      // 附加说明
 }
 
 // FilmBasic 是保存元数据时所需的影片基础信息。

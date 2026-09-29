@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchFilms, fetchFilters, fetchStats, fetchFilm, createFilm,
-  deleteMeta, deleteViewing,
+  deleteMeta, deleteViewing, fetchRatingProgress,
 } from './api.js';
 import Filters from './components/Filters.jsx';
 import FilmCard from './components/FilmCard.jsx';
@@ -61,6 +61,8 @@ export default function App() {
   const [confirmError, setConfirmError] = useState(null);
   const [addingFilm, setAddingFilm] = useState(false);
   const [ratingsOpen, setRatingsOpen] = useState(false);
+  // 评分刷新后台任务的进度快照（页头角标与评分管理弹窗共用，统一在 App 轮询）
+  const [ratingJob, setRatingJob] = useState(null);
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState(loadRows);
   const [cols, setCols] = useState(1);
@@ -152,6 +154,23 @@ export default function App() {
     const t = setTimeout(loadFilms, 150); // 简单防抖
     return () => clearTimeout(t);
   }, [loadFilms]);
+
+  // 轮询评分刷新进度：豆瓣逐条限速，任务可能跑数分钟；空闲时只是取一个极小 JSON。
+  // 放在 App 层是为了让页头角标与评分管理弹窗共用同一份状态，避免两处各自轮询。
+  useEffect(() => {
+    const tick = () => { fetchRatingProgress().then(setRatingJob).catch(() => {}); };
+    tick();
+    const t = setInterval(tick, 3000);
+    return () => clearInterval(t);
+  }, []);
+
+  // 任务由「运行中」变为「已结束」时重拉列表，让卡片/列表的评分徽标即时更新
+  const jobWasRunning = useRef(false);
+  useEffect(() => {
+    const running = Boolean(ratingJob?.running);
+    if (jobWasRunning.current && !running) loadFilms();
+    jobWasRunning.current = running;
+  }, [ratingJob, loadFilms]);
 
   const activeFilterCount = useMemo(
     () => Object.values(filters).filter((v) => v !== '' && v != null).length,
@@ -286,7 +305,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1><Icon name="film" size={26} />个人影视观看记录</h1>
+        <h1><Icon name="film" size={26} />影迹 · 个人影视观看记录</h1>
         <div className="header-actions">
           <button
             type="button"
@@ -332,6 +351,10 @@ export default function App() {
           onSelect={(k) =>
             updateFilters((f) => ({ ...f, category: f.category === k ? '' : k }))
           }
+          missing={filters.missing}
+          onSelectMissing={(v) =>
+            updateFilters((f) => ({ ...f, missing: f.missing === v ? '' : v }))
+          }
           readOnly={readOnly}
           onAdd={() => setAddingFilm(true)}
         />
@@ -345,6 +368,7 @@ export default function App() {
         activeCount={activeFilterCount}
         onOpenRatings={() => setRatingsOpen(true)}
         readOnly={readOnly}
+        ratingJob={ratingJob}
       />
 
       {error && <div className="error-banner"><Icon name="alert" size={16} /> {error.message}</div>}
@@ -380,7 +404,7 @@ export default function App() {
       {loading ? (
         <div className="grid-loading">加载中…</div>
       ) : films.length === 0 ? (
-        <div className="empty">无匹配记录</div>
+        <div className="empty-state">无匹配记录</div>
       ) : viewMode === 'grid' ? (
         <div className="film-grid" ref={gridRef}>
           {pagedFilms.map((f) => (
@@ -468,6 +492,7 @@ export default function App() {
         <RatingManager
           films={films}
           filters={filters}
+          job={ratingJob}
           onClose={() => {
             setRatingsOpen(false);
             // 关闭时刷新列表，保证下次打开与详情弹窗的豆瓣 ID 一致
@@ -520,7 +545,10 @@ function AddFilmModal({ onClose, onCreated }) {
 
   return (
     <>
-    <div className="modal-overlay" onClick={handleOverlayClose}>
+    <div
+      className="modal-overlay"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) handleOverlayClose(); }}
+    >
       <div className="modal add-film-modal" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
         <h3><Icon name="plus" size={16} /> 新增观影记录</h3>
@@ -554,10 +582,12 @@ function AddFilmModal({ onClose, onCreated }) {
   );
 }
 
-function CategoryBreakdown({ stats, active, onSelect, readOnly, onAdd }) {
+function CategoryBreakdown({ stats, active, onSelect, missing, onSelectMissing, readOnly, onAdd }) {
   const total = stats.total;
   const noMetaCount = stats.withoutMetadata ?? 0;
+  const ratingCount = stats.missingRatings ?? 0;
   const NO_META = '__no_meta__';
+  const MISSING_RATING = 'rating';
   return (
     <div className="cat-cards">
       <button
@@ -578,6 +608,17 @@ function CategoryBreakdown({ stats, active, onSelect, readOnly, onAdd }) {
         >
           <span className="cat-card-name"><Icon name="alert" size={13} /> 无元数据</span>
           <span className="cat-card-count">{noMetaCount}</span>
+        </button>
+      )}
+      {ratingCount > 0 && (
+        <button
+          type="button"
+          className={`cat-card cat-card-missing-rating${missing === MISSING_RATING ? ' active' : ''}`}
+          onClick={() => onSelectMissing(MISSING_RATING)}
+          title={`待补评分: ${ratingCount} 条记录缺评分或缺评价人数，刷新评分时只会补这些`}
+        >
+          <span className="cat-card-name"><Icon name="star" size={13} /> 待补评分</span>
+          <span className="cat-card-count">{ratingCount}</span>
         </button>
       )}
       {stats.byCategory.map((x) => (

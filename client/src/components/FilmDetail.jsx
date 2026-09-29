@@ -288,36 +288,81 @@ function ImageTools({ filmId, type, label, hasLocal, hasRemote, onChanged, onErr
   );
 }
 
-/** 详情标题右侧的 ID 链接（带图标，跳转外站） */
-function DetailIdLinks({ imdbId, doubanId }) {
-  if (!imdbId && !doubanId) return null;
+/** 评价人数：3345837 → 334.6万 */
+function formatVotes(n) {
+  if (!n) return '';
+  return n >= 10000 ? `${(n / 10000).toFixed(1)}万` : String(n);
+}
+
+/**
+ * 海报下方的评分与 ID：豆瓣 / IMDb 各占一列，整块以来源主题色为底，
+ * 自上而下为 来源 LOGO + 名称、评分（无评分时灰字「无评分」）、评价人数、可点击的 ID。
+ * 某来源既无 ID 也无评分时该列不渲染；两列都没有则整块不渲染。
+ */
+function DetailStats({ film }) {
+  const { doubanId, doubanRating, doubanVotes, imdbId, imdbRating, imdbVotes } = film;
+  const hasDouban = Boolean(doubanId) || doubanRating > 0;
+  const hasImdb = Boolean(imdbId) || imdbRating > 0;
+  if (!hasDouban && !hasImdb) return null;
   return (
-    <span className="detail-id-links">
-      {imdbId && (
-        <a
-          className="detail-id-link imdb"
-          href={`https://www.imdb.com/title/${imdbId}`}
-          target="_blank"
-          rel="noreferrer"
-          title={`IMDb: ${imdbId}`}
-        >
-          <img src={`${ICON_BASE}/imdb.svg`} alt="IMDb" width={13} height={13} className="row-id-logo" />
-          <span className="row-id-value">{imdbId}</span>
-        </a>
+    <div className="detail-stats">
+      {hasDouban && (
+        <div className="detail-stat douban">
+          <div className="detail-stat-head">
+            <img className="detail-stat-logo" src={`${ICON_BASE}/douban.svg`} alt="" />
+            <span className="detail-stat-name">豆瓣</span>
+          </div>
+          <div className={`detail-stat-value${doubanRating > 0 ? '' : ' empty'}`}>
+            {doubanRating > 0 ? (
+              <>
+                {doubanRating.toFixed(1)}
+                <span className="detail-stat-max"> / 10</span>
+              </>
+            ) : '无评分'}
+          </div>
+          {doubanVotes > 0 && <div className="detail-stat-sub">{formatVotes(doubanVotes)} 人评价</div>}
+          {doubanId && (
+            <a
+              className="detail-stat-id"
+              href={`https://movie.douban.com/subject/${doubanId}/`}
+              target="_blank"
+              rel="noreferrer"
+              title={`豆瓣: ${doubanId}`}
+            >
+              {doubanId}
+            </a>
+          )}
+        </div>
       )}
-      {doubanId && (
-        <a
-          className="detail-id-link douban"
-          href={`https://movie.douban.com/subject/${doubanId}/`}
-          target="_blank"
-          rel="noreferrer"
-          title={`豆瓣: ${doubanId}`}
-        >
-          <img src={`${ICON_BASE}/douban.svg`} alt="豆瓣" width={13} height={13} className="row-id-logo" />
-          <span className="row-id-value">{doubanId}</span>
-        </a>
+      {hasImdb && (
+        <div className="detail-stat imdb">
+          <div className="detail-stat-head">
+            <img className="detail-stat-logo" src={`${ICON_BASE}/imdb.svg`} alt="" />
+            <span className="detail-stat-name">IMDb</span>
+          </div>
+          <div className={`detail-stat-value${imdbRating > 0 ? '' : ' empty'}`}>
+            {imdbRating > 0 ? (
+              <>
+                {imdbRating.toFixed(1)}
+                <span className="detail-stat-max"> / 10</span>
+              </>
+            ) : '无评分'}
+          </div>
+          {imdbVotes > 0 && <div className="detail-stat-sub">{formatVotes(imdbVotes)} 人评分</div>}
+          {imdbId && (
+            <a
+              className="detail-stat-id"
+              href={`https://www.imdb.com/title/${imdbId}`}
+              target="_blank"
+              rel="noreferrer"
+              title={`IMDb: ${imdbId}`}
+            >
+              {imdbId}
+            </a>
+          )}
+        </div>
       )}
-    </span>
+    </div>
   );
 }
 
@@ -612,7 +657,10 @@ export default function FilmDetail({
 
   return (
     <>
-    <div className="modal-overlay" onClick={handleOverlayClose}>
+    <div
+      className="modal-overlay"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) handleOverlayClose(); }}
+    >
       <div className="modal film-detail" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
 
@@ -646,6 +694,8 @@ export default function FilmDetail({
                     </div>
                   )}
                 </div>
+                <DetailStats film={film} />
+                {/* margin-top: auto 让提示贴住列底，评分块则紧贴海报下方 */}
                 <div className="detail-meta-hint">
                   {meta?.mediaType === 'tv' ? '电视剧' : meta?.mediaType === 'movie' ? '电影' : ''}
                   {meta?.updatedAt ? ` · 更新于 ${meta.updatedAt.slice(0, 10)}` : ''}
@@ -708,10 +758,7 @@ export default function FilmDetail({
               </>
             ) : (
               <div className="detail-info">
-                <div className="detail-title-row">
-                  <h2>{meta?.title || film.name}</h2>
-                  <DetailIdLinks imdbId={film.imdbId} doubanId={film.doubanId} />
-                </div>
+                <h2>{meta?.title || film.name}</h2>
                 {meta?.originalTitle && meta.originalTitle !== meta.title && (
                   <div className="original-title">{meta.originalTitle}</div>
                 )}
@@ -726,9 +773,6 @@ export default function FilmDetail({
                     <span className="tag"><Icon name="clock" size={12} /> {meta.runtime} 分钟</span>
                   )}
                   {meta?.genres?.map((g) => <span key={g} className="tag genre">{g}</span>)}
-                  {meta?.voteAverage > 0 && (
-                    <span className="tag rating"><Icon name="star" size={12} /> {meta.voteAverage.toFixed(1)}</span>
-                  )}
                 </div>
 
                 {meta?.tagline && <p className="meta-tagline">“{meta.tagline}”</p>}

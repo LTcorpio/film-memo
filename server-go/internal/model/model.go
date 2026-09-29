@@ -33,6 +33,8 @@ const MetaCols = `m.film_id AS m_film_id, m.imdb_id AS m_imdb_id, m.tmdb_id AS m
   m.poster_local AS m_poster_local, m.backdrop_local AS m_backdrop_local,
   m.genres AS m_genres, m.production_countries AS m_countries, m.runtime AS m_runtime,
   m.vote_average AS m_vote_average, m.vote_count AS m_vote_count,
+  m.douban_rating AS m_douban_rating, m.douban_votes AS m_douban_votes,
+  m.imdb_rating AS m_imdb_rating, m.imdb_votes AS m_imdb_votes,
   m.directors AS m_directors, m.cast AS m_cast, m.release_date AS m_release_date,
   m.status AS m_status, m.tagline AS m_tagline, m.updated_at AS m_updated_at,
   m.original_language AS m_original_language, m.spoken_languages AS m_spoken_languages,
@@ -58,14 +60,14 @@ const ListCols = `v.id, v.watch_year, v.start_date, v.end_date, v.platforms_raw,
 // (FilmsCols + MetaCols) 严格一致。所有可空字段用指针，NULL→nil。
 type FilmRow struct {
 	// films 列
-	ID                    int64   `db:"id"`
-	Category              *string `db:"category"`
-	Name                  *string `db:"name"`
-	ImdbID                *string `db:"imdb_id"`
-	DoubanID              *string `db:"douban_id"`
-	ProductionCountries   *string `db:"production_countries_raw"`
-	ReleaseYear           *int64  `db:"release_year"`
-	TotalEpisodes         *int64  `db:"total_episodes"`
+	ID                  int64   `db:"id"`
+	Category            *string `db:"category"`
+	Name                *string `db:"name"`
+	ImdbID              *string `db:"imdb_id"`
+	DoubanID            *string `db:"douban_id"`
+	ProductionCountries *string `db:"production_countries_raw"`
+	ReleaseYear         *int64  `db:"release_year"`
+	TotalEpisodes       *int64  `db:"total_episodes"`
 	// film_metadata 列（m_ 前缀）
 	MFilmID              *int64   `db:"m_film_id"`
 	MImdbID              *string  `db:"m_imdb_id"`
@@ -83,6 +85,10 @@ type FilmRow struct {
 	MRuntime             *int64   `db:"m_runtime"`
 	MVoteAverage         *float64 `db:"m_vote_average"`
 	MVoteCount           *int64   `db:"m_vote_count"`
+	MDoubanRating        *float64 `db:"m_douban_rating"`
+	MDoubanVotes         *int64   `db:"m_douban_votes"`
+	MImdbRating          *float64 `db:"m_imdb_rating"`
+	MImdbVotes           *int64   `db:"m_imdb_votes"`
 	MDirectors           *string  `db:"m_directors"`
 	MCast                *string  `db:"m_cast"`
 	MReleaseDate         *string  `db:"m_release_date"`
@@ -115,6 +121,7 @@ func (r *FilmRow) ScanPtrs() []interface{} {
 		&r.MFilmID, &r.MImdbID, &r.MTmdbID, &r.MMediaType, &r.MTitle, &r.MOriginalTitle,
 		&r.MOverview, &r.MPosterPath, &r.MBackdropPath, &r.MPosterLocal, &r.MBackdropLocal,
 		&r.MGenres, &r.MCountries, &r.MRuntime, &r.MVoteAverage, &r.MVoteCount,
+		&r.MDoubanRating, &r.MDoubanVotes, &r.MImdbRating, &r.MImdbVotes,
 		&r.MDirectors, &r.MCast, &r.MReleaseDate, &r.MStatus, &r.MTagline, &r.MUpdatedAt,
 		&r.MOriginalLanguage, &r.MSpokenLanguages, &r.MOriginCountry, &r.MProductionCompanies,
 		&r.MWriters, &r.MCinematographers, &r.MComposers, &r.MProducers, &r.MKeywords,
@@ -234,6 +241,10 @@ type Entry struct {
 	Name                   string       `json:"name"`
 	ImdbID                 string       `json:"imdbId"`
 	DoubanID               string       `json:"doubanId"`
+	ImdbRating             *float64     `json:"imdbRating"`
+	ImdbVotes              *int64       `json:"imdbVotes"`
+	DoubanRating           *float64     `json:"doubanRating"`
+	DoubanVotes            *int64       `json:"doubanVotes"`
 	ReleaseYear            *int64       `json:"releaseYear"`
 	TotalEpisodes          *int64       `json:"totalEpisodes"`
 	ProductionCountries    []string     `json:"productionCountries"`
@@ -249,6 +260,10 @@ type FilmDetail struct {
 	Category               string       `json:"category"`
 	ImdbID                 string       `json:"imdbId"`
 	DoubanID               string       `json:"doubanId"`
+	ImdbRating             *float64     `json:"imdbRating"`
+	ImdbVotes              *int64       `json:"imdbVotes"`
+	DoubanRating           *float64     `json:"doubanRating"`
+	DoubanVotes            *int64       `json:"doubanVotes"`
 	ReleaseYear            *int64       `json:"releaseYear"`
 	TotalEpisodes          *int64       `json:"totalEpisodes"`
 	ProductionCountries    []string     `json:"productionCountries"`
@@ -441,6 +456,10 @@ func ShapeEntry(r *EntryRow) Entry {
 		Name:                   strPtr(r.FilmRow.Name),
 		ImdbID:                 strPtr(r.FilmRow.ImdbID),
 		DoubanID:               strPtr(r.FilmRow.DoubanID),
+		ImdbRating:             r.FilmRow.MImdbRating,
+		ImdbVotes:              r.FilmRow.MImdbVotes,
+		DoubanRating:           r.FilmRow.MDoubanRating,
+		DoubanVotes:            r.FilmRow.MDoubanVotes,
 		ReleaseYear:            r.FilmRow.ReleaseYear,
 		TotalEpisodes:          r.FilmRow.TotalEpisodes,
 		ProductionCountries:    shapeCountries(&r.FilmRow),
@@ -462,6 +481,10 @@ func ShapeFilm(r *FilmRow, viewings []ViewingRow) FilmDetail {
 		Category:               strPtr(r.Category),
 		ImdbID:                 strPtr(r.ImdbID),
 		DoubanID:               strPtr(r.DoubanID),
+		ImdbRating:             r.MImdbRating,
+		ImdbVotes:              r.MImdbVotes,
+		DoubanRating:           r.MDoubanRating,
+		DoubanVotes:            r.MDoubanVotes,
 		ReleaseYear:            r.ReleaseYear,
 		TotalEpisodes:          r.TotalEpisodes,
 		ProductionCountries:    shapeCountries(r),

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
 
 const ICON_BASE = '/icon';
@@ -128,10 +127,17 @@ export default function FilmList({ films, onClick, onContextMenu }) {
                   </div>
                 </td>
                 <td className="col-rating">
-                  {meta?.voteAverage > 0 ? (
-                    <span className="row-rating">
-                      <Icon name="star" size={12} /> {meta.voteAverage.toFixed(1)}
-                    </span>
+                  {film.doubanRating > 0 || film.imdbRating > 0 ? (
+                    <div className="row-rating-lines">
+                      <span className={`row-rating douban${film.doubanRating > 0 ? '' : ' empty'}`}>
+                        <em>豆瓣</em>
+                        <b>{film.doubanRating > 0 ? film.doubanRating.toFixed(1) : '—'}</b>
+                      </span>
+                      <span className={`row-rating imdb${film.imdbRating > 0 ? '' : ' empty'}`}>
+                        <em>IMDb</em>
+                        <b>{film.imdbRating > 0 ? film.imdbRating.toFixed(1) : '—'}</b>
+                      </span>
+                    </div>
                   ) : (
                     <span className="row-dim">—</span>
                   )}

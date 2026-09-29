@@ -1,14 +1,17 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"film-memo/internal/db"
+	"film-memo/internal/imdb"
 	"film-memo/internal/model"
 	"film-memo/internal/tmdb"
 )
@@ -35,13 +38,62 @@ type saveMetaBody struct {
 	Season    interface{} `json:"season"`
 }
 
-// refreshSummary 是 POST /api/ratings/refresh 的响应。
+// sourceSummary 是单个评分数据源本次拉取的统计。
+type sourceSummary struct {
+	Source       string                   `json:"source"`
+	Total        int64                    `json:"total"`   // 该源覆盖的影片数
+	Updated      int64                    `json:"updated"` // 成功写入数
+	Skipped      int64                    `json:"skipped"` // 跳过数（数据源无此条目）
+	Failed       int64                    `json:"failed"`  // 失败数
+	LastSyncedAt *string                  `json:"lastSyncedAt"`
+	Message      *string                  `json:"message"`
+	Errors       []map[string]interface{} `json:"errors"`
+}
+
+// refreshSummary 是 POST /api/ratings/refresh 的响应（按数据源分列）。
 type refreshSummary struct {
-	Total   int64                    `json:"total"`
-	Updated int64                    `json:"updated"`
-	Skipped int64                    `json:"skipped"`
-	Failed  int64                    `json:"failed"`
-	Errors  []map[string]interface{} `json:"errors"`
+	Total   int64           `json:"total"` // 本次涉及的影片数
+	Sources []sourceSummary `json:"sources"`
+}
+
+// maxReportedErrors 单个数据源最多回传的错误明细条数。
+const maxReportedErrors = 10
+
+// sourceStat 累计单个数据源本次拉取的统计。
+type sourceStat struct {
+	source  string
+	total   int64
+	updated int64
+	skipped int64
+	failed  int64
+	message *string
+	errors  []map[string]interface{}
+}
+
+func newSourceStat(source string) *sourceStat {
+	return &sourceStat{source: source, errors: []map[string]interface{}{}}
+}
+
+// fail 记录一条失败明细（超出上限后仅计数）。
+func (s *sourceStat) fail(filmID int64, name string, err error) {
+	s.failed++
+	if len(s.errors) < maxReportedErrors {
+		s.errors = append(s.errors, map[string]interface{}{"id": filmID, "name": name, "error": err.Error()})
+	}
+}
+
+func (s *sourceStat) out(lastSyncedAt string) sourceSummary {
+	return sourceSummary{
+		Source: s.source, Total: s.total, Updated: s.updated, Skipped: s.skipped, Failed: s.failed,
+		LastSyncedAt: &lastSyncedAt, Message: s.message, Errors: s.errors,
+	}
+}
+
+func (s *sourceStat) toSync(lastSyncedAt string) db.RatingSync {
+	return db.RatingSync{
+		Source: s.source, LastSyncedAt: &lastSyncedAt, Total: s.total,
+		Updated: s.updated, Skipped: s.skipped, Failed: s.failed, Message: s.message,
+	}
 }
 
 // --- 影片列表/详情/增删改 ---
@@ -426,10 +478,10 @@ func (s *Server) handleSaveMetadata(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.UpdateImdbID(film.ID, meta.ImdbID)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":           true,
-		"tmdbId":       meta.TmdbID,
-		"imdbId":       meta.ImdbID,
-		"posterLocal":  posterLocal,
+		"ok":            true,
+		"tmdbId":        meta.TmdbID,
+		"imdbId":        meta.ImdbID,
+		"posterLocal":   posterLocal,
 		"backdropLocal": backdropLocal,
 	})
 }
@@ -612,12 +664,32 @@ func (s *Server) handleDeleteImage(w http.ResponseWriter, r *http.Request) {
 
 // --- 评分刷新 ---
 
-// handleRefreshRatings POST /api/ratings/refresh
-func (s *Server) handleRefreshRatings(w http.ResponseWriter, r *http.Request) {
-	if !s.tmdb.Configured() {
-		writeError(w, http.StatusBadRequest, "TMDB 未配置")
-		return
+// doubanTVRe 判断类别是否应按电视剧取豆瓣评分（与 tmdb 包的 preferTV 口径一致）。
+var doubanTVRe = regexp.MustCompile(`剧|综艺|动漫|纪录|动画`)
+
+// doubanMediaType 按类别推断豆瓣接口路径；推断错误时客户端会在 404 后自动换类型重试。
+func doubanMediaType(category string) string {
+	if doubanTVRe.MatchString(category) {
+		return "tv"
 	}
+	return "movie"
+}
+
+// filmRatingResult 是单部影片本次拉取的中间结果。
+type filmRatingResult struct {
+	ref           *db.FilmRef
+	set           db.RatingSet
+	imdbOutcome   string // updated / skipped / failed / ""（无 imdb_id）
+	imdbErr       error
+	doubanOutcome string
+	doubanErr     error
+}
+
+// handleRefreshRatings POST /api/ratings/refresh
+// 启动后台刷新任务并立即返回；实际抓取由 runRatingsJob 在 goroutine 中完成，
+// 前端通过 GET /api/ratings/refresh/progress 轮询进度。
+// 已有任务运行中时不新建任务（started=false），前端继续轮询既有进度即可。
+func (s *Server) handleRefreshRatings(w http.ResponseWriter, r *http.Request) {
 	// 合并 query + body（对应 JS {...req.query, ...req.body}）
 	merged := map[string]interface{}{}
 	for k, vs := range r.URL.Query() {
@@ -633,39 +705,232 @@ func (s *Server) handleRefreshRatings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	f := buildFilterFromMap(merged)
+	source, _ := merged["source"].(string)
+	job, started := s.jobs.start(source, nowISO())
+	if !started {
+		// 已有任务运行中：不新建，前端继续轮询既有进度
+		writeJSON(w, http.StatusOK, map[string]interface{}{"started": false, "running": true})
+		return
+	}
+	// 后台任务不能复用 r.Context()：handler 一返回该 context 就会被取消
+	ctx, cancel := context.WithCancel(context.Background())
+	job.bindCancel(cancel)
+	go s.runRatingsJob(ctx, buildFilterFromMap(merged), source, job)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"started": true, "running": true})
+}
+
+// runRatingsJob 执行实际的评分拉取：两个数据源互不阻塞，
+// IMDb 走官方数据集本地索引（一次下载/校验，随后流式查询），豆瓣走移动端接口（限速串行）。
+// 过程中更新 job 的阶段与进度，结果连同本次拉取时间写入 rating_sync 供前端展示「上次更新」。
+func (s *Server) runRatingsJob(ctx context.Context, f db.Filter, source string, job *ratingJob) {
 	rows, err := s.db.ListFilmRefsForRatings(f)
+	if err != nil {
+		msg := err.Error()
+		job.finish(nil, nil, &msg, nowISO())
+		return
+	}
+
+	doubanStat := newSourceStat("douban")
+	imdbStat := newSourceStat("imdb")
+	// 可选按来源刷新：source=douban / imdb 时只跑对应数据源，未跑的数据源不改动其同步记录
+	runDouban, runImdb := source != "imdb", source != "douban"
+	job.setTotal(progressUnits(rows, runDouban, runImdb))
+
+	// IMDb：先确保数据集可用，再一次流式查询本次所需的全部 tconst。
+	// 只收集「缺评分或缺评价人数」的影片，已有数据的条目不再重复抓取。
+	imdbIDs := []string{}
+	for i := range rows {
+		if rows[i].ImdbID != "" && rows[i].ImdbNeed {
+			imdbIDs = append(imdbIDs, rows[i].ImdbID)
+		}
+		if rows[i].DoubanID != "" && rows[i].DoubanNeed {
+			doubanStat.total++
+		}
+	}
+	imdbIndex := map[string]imdb.Rating{}
+	var imdbErr error
+	if len(imdbIDs) > 0 && runImdb {
+		job.setPhase(phaseImdb)
+		imdbStat.total = int64(len(imdbIDs))
+		if meta, err := s.imdb.Ensure(ctx); err != nil {
+			imdbErr = err
+		} else {
+			if meta.Offline {
+				imdbStat.message = ptrString("网络不可用，本次使用本地缓存数据集")
+			}
+			if idx, err := s.imdb.LookupAll(ctx, imdbIDs); err != nil {
+				imdbErr = err
+			} else {
+				imdbIndex = idx
+			}
+		}
+	}
+	if imdbErr != nil {
+		imdbStat.message = ptrString(imdbErr.Error())
+	}
+	if len(imdbIDs) > 0 && runImdb {
+		job.advance()
+	}
+
+	// 拉取阶段：逐部影片取两个来源的评分（豆瓣请求在客户端内部串行限速）
+	job.setPhase(phaseDouban)
+	results := make([]filmRatingResult, 0, len(rows))
+	for i := range rows {
+		if ctx.Err() != nil {
+			break // 服务停机/任务取消：停止抓取，已取到的结果照常落库
+		}
+		rr := rows[i]
+		res := filmRatingResult{ref: &rr}
+
+		if rr.ImdbID != "" && rr.ImdbNeed {
+			switch {
+			case imdbErr != nil:
+				res.imdbOutcome, res.imdbErr = "failed", imdbErr
+			default:
+				if rt, ok := imdbIndex[rr.ImdbID]; ok {
+					v, c := rt.Average, rt.Votes
+					res.set.ImdbRating, res.set.ImdbVotes = &v, &c
+					res.imdbOutcome = "updated"
+				} else {
+					res.imdbOutcome = "skipped"
+				}
+			}
+		}
+		if rr.DoubanID != "" && runDouban && rr.DoubanNeed {
+			rt, err := s.douban.GetRating(ctx, rr.DoubanID, doubanMediaType(rr.Category))
+			switch {
+			case err != nil:
+				res.doubanOutcome, res.doubanErr = "failed", err
+			case rt.Value <= 0:
+				// 条目不存在或尚无评分：跳过，避免把 0 分写入库
+				res.doubanOutcome = "skipped"
+			default:
+				v, c := rt.Value, rt.Count
+				res.set.DoubanRating, res.set.DoubanVotes = &v, &c
+				res.doubanOutcome = "updated"
+			}
+			job.advance() // 每完成一部影片的豆瓣抓取推进一格进度
+		}
+		results = append(results, res)
+	}
+
+	// 写库阶段：单条写入失败时，把该条已取到的来源改判为失败
+	job.setPhase(phaseWrite)
+	now := nowISO()
+	for i := range results {
+		res := &results[i]
+		if res.set.Empty() {
+			continue
+		}
+		if err := s.db.UpdateRatings(res.ref.ID, res.set, now); err != nil {
+			if res.imdbOutcome == "updated" {
+				res.imdbOutcome, res.imdbErr = "failed", err
+			}
+			if res.doubanOutcome == "updated" {
+				res.doubanOutcome, res.doubanErr = "failed", err
+			}
+		}
+	}
+
+	// 统计阶段
+	for i := range results {
+		res := &results[i]
+		switch res.imdbOutcome {
+		case "updated":
+			imdbStat.updated++
+		case "skipped":
+			imdbStat.skipped++
+		case "failed":
+			imdbStat.fail(res.ref.ID, res.ref.Name, res.imdbErr)
+		}
+		switch res.doubanOutcome {
+		case "updated":
+			doubanStat.updated++
+		case "skipped":
+			doubanStat.skipped++
+		case "failed":
+			doubanStat.fail(res.ref.ID, res.ref.Name, res.doubanErr)
+		}
+	}
+
+	// 只落盘与返回本次实际运行的数据源，避免把未运行来源的统计写成 0
+	ran := []*sourceStat{}
+	if runDouban {
+		ran = append(ran, doubanStat)
+	}
+	if runImdb {
+		ran = append(ran, imdbStat)
+	}
+	sources := make([]sourceSummary, 0, len(ran))
+	for _, st := range ran {
+		if err := s.db.UpsertRatingSync(st.toSync(now)); err != nil {
+			msg := err.Error()
+			job.finish(nil, ran, &msg, nowISO())
+			return
+		}
+		sources = append(sources, st.out(now))
+	}
+
+	// 本次实际涉及的影片数：至少有一个运行中的来源判定为缺失
+	targets := int64(0)
+	for i := range rows {
+		if (runDouban && rows[i].DoubanID != "" && rows[i].DoubanNeed) ||
+			(runImdb && rows[i].ImdbID != "" && rows[i].ImdbNeed) {
+			targets++
+		}
+	}
+	job.finish(&refreshSummary{
+		Total:   targets,
+		Sources: sources,
+	}, ran, nil, nowISO())
+}
+
+// handleRatingProgress GET /api/ratings/refresh/progress
+// 返回当前（或最近一次）评分刷新任务的进度快照；从未跑过任务时返回 running=false。
+func (s *Server) handleRatingProgress(w http.ResponseWriter, r *http.Request) {
+	j := s.jobs.current()
+	if j == nil {
+		writeJSON(w, http.StatusOK, jobProgress{Running: false})
+		return
+	}
+	writeJSON(w, http.StatusOK, j.snapshot())
+}
+
+// handleStopRatings POST /api/ratings/refresh/stop
+// 停止进行中的评分刷新任务：在当前影片抓取结束后退出循环，已取到的结果照常落库。
+// 没有运行中的任务时返回 stopped=false。
+func (s *Server) handleStopRatings(w http.ResponseWriter, r *http.Request) {
+	j := s.jobs.current()
+	if j == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"stopped": false, "running": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"stopped": j.cancelIfRunning(), "running": true})
+}
+
+// StopJobs 取消进行中的评分刷新任务并等待其收尾（停机时调用，
+// 避免后台任务向随后关闭的数据库继续写入）。
+func (s *Server) StopJobs() {
+	j := s.jobs.current()
+	if j == nil {
+		return
+	}
+	if j.cancelIfRunning() {
+		j.wait(3 * time.Second)
+	}
+}
+
+// handleRatingsStatus GET /api/ratings/status
+// 返回各评分数据源最近一次拉取的时间与结果，以及 IMDb 数据集本地缓存状态。
+func (s *Server) handleRatingsStatus(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.ListRatingSync()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	summary := refreshSummary{Total: int64(len(rows)), Errors: []map[string]interface{}{}}
-	ctx := r.Context()
-	for _, rr := range rows {
-		if rr.TmdbID == nil || rr.MediaType == "" {
-			summary.Skipped++
-			continue
-		}
-		details, err := s.tmdb.GetDetails(ctx, *rr.TmdbID, rr.MediaType)
-		if err != nil {
-			summary.Failed++
-			if len(summary.Errors) < 10 {
-				summary.Errors = append(summary.Errors, map[string]interface{}{"id": rr.ID, "name": rr.Name, "error": err.Error()})
-			}
-			continue
-		}
-		if details == nil {
-			summary.Skipped++
-			continue
-		}
-		if err := s.db.UpdateRatings(rr.ID, details.VoteAverage, details.VoteCount, nowISO()); err != nil {
-			summary.Failed++
-			if len(summary.Errors) < 10 {
-				summary.Errors = append(summary.Errors, map[string]interface{}{"id": rr.ID, "name": rr.Name, "error": err.Error()})
-			}
-			continue
-		}
-		summary.Updated++
-	}
-	writeJSON(w, http.StatusOK, summary)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"sources":     rows,
+		"imdbDataset": s.imdb.Cache(),
+	})
 }

@@ -33,6 +33,15 @@
   --loading-overlay-bg: rgba(26, 29, 39, 0.85);
   /* 卡片 Badge（评分/无元数据）背景：暗色主题 */
   --badge-bg: rgba(0, 0, 0, 0.72);
+  /* 评分来源配色：豆瓣绿 / IMDb 黄（暗色主题下取值更亮） */
+  --rate-douban: #4ade80;
+  --rate-imdb: #f5c518;
+  /* 评分底色：主题色淡染弹窗底色。详情页评分块与卡片评分徽章共用此变量，保证两处配色一致；
+     引用的是继承变量，故只需定义一次即可随主题变化 */
+  --rate-douban-bg: color-mix(in srgb, var(--rate-douban) 16%, var(--bg-elev));
+  --rate-imdb-bg: color-mix(in srgb, var(--rate-imdb) 16%, var(--bg-elev));
+  /* 详情页海报阴影：比默认略轻，避免压在下方评分块上显得脏 */
+  --poster-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
 }
 
 /* 亮色主题变量 */
@@ -70,6 +79,10 @@
   --loading-overlay-bg: rgba(255, 255, 255, 0.88);
   /* 卡片 Badge（评分/无元数据）背景：亮色主题 */
   --badge-bg: rgba(255, 255, 255, 0.9);
+  /* 评分来源配色：亮底上需更深的值才有足够对比度 */
+  --rate-douban: #1a7f37;
+  --rate-imdb: #8a6100;
+  --poster-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 }
 
 /* 系统主题：未显式选择时跟随系统 */
@@ -104,6 +117,10 @@
     --loading-overlay-bg: rgba(255, 255, 255, 0.88);
     /* 卡片 Badge（评分/无元数据）背景：亮色主题（系统跟随） */
     --badge-bg: rgba(255, 255, 255, 0.9);
+    /* 评分来源配色（系统跟随亮色） */
+    --rate-douban: #1a7f37;
+    --rate-imdb: #8a6100;
+    --poster-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
   }
 }
 
@@ -128,6 +145,17 @@ body {
     'Microsoft YaHei', Roboto, Helvetica, Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  /* 中文排版: ① 中西文之间自动留白（CJK 与拉丁字母/数字之间插入细间隙，旧浏览器静默退化）
+     ② 标点开明式: 全角标点压成半宽（OpenType halt 特性；需字体自带该特性，PingFang SC /
+     Hiragino Sans GB 已确认支持，STHeiti、部分 Windows 字体没有） */
+  text-autospace: normal;
+  font-feature-settings: 'halt' 1;
+}
+
+/* 原生表单控件不继承 body 的 font-family，会退回 UA 默认字体导致中文/标点排版不一致 */
+button, input, select, textarea {
+  font-family: inherit;
+  font-feature-settings: inherit;
 }
 
 .app {
@@ -276,6 +304,16 @@ body {
 }
 .cat-card-no-meta.active .cat-card-name,
 .cat-card-no-meta.active .cat-card-count { color: #fff; }
+/* 待补评分筛选卡：次强调色（紫），区别于普通分类与「无元数据」警示卡 */
+.cat-card-missing-rating .cat-card-name { color: var(--accent-2); display: inline-flex; align-items: center; gap: 4px; }
+.cat-card-missing-rating .cat-card-count { color: var(--accent-2); }
+.cat-card-missing-rating:hover { border-color: var(--accent-2); }
+.cat-card-missing-rating.active {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+.cat-card-missing-rating.active .cat-card-name,
+.cat-card-missing-rating.active .cat-card-count { color: #fff; }
 /* 新增记录卡：强调色按钮风格 */
 .cat-card-add {
   border-style: dashed;
@@ -368,7 +406,10 @@ body {
 }
 .view-toggle button:hover { background: var(--bg-elev); color: var(--text); }
 .view-toggle button.active { background: var(--accent); color: #fff; }
-.empty {
+/* 列表空状态占位（整块居中、上下大留白）。
+   注意类名带 -state 后缀：早先叫 .empty，会与「无评分」用的修饰类
+   .detail-stat-value.empty / .row-rating.empty 撞名，把 60px 内边距套到评分块上 */
+.empty-state {
   text-align: center;
   color: var(--text-dim);
   padding: 60px 0;
@@ -415,6 +456,8 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 14px;
+  /* 表单控件不继承 body 字体，需显式 inherit，否则退回 UA 默认字体 */
+  font-family: inherit;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
@@ -456,6 +499,7 @@ body {
   border-radius: 8px;
   padding: 6px 8px;
   font-size: 13px;
+  font-family: inherit;
   cursor: pointer;
 }
 .page-jump input {
@@ -467,6 +511,7 @@ body {
   border-radius: 8px;
   padding: 0 8px;
   font-size: 13px;
+  font-family: inherit;
   text-align: center;
   font-variant-numeric: tabular-nums;
   -moz-appearance: textfield;
@@ -484,6 +529,7 @@ body {
   border-radius: 8px;
   padding: 0 12px;
   font-size: 13px;
+  font-family: inherit;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
@@ -533,7 +579,9 @@ body {
   background: var(--bg-elev2);
   overflow: hidden;
 }
-.poster img {
+/* 只作用于海报图本身：卡片右上角评分徽章里的 LOGO 也在 .poster 内，
+   用 .poster img 会把它一并拉伸并吃到淡入的 opacity: 0（导致 LOGO 不显示） */
+.poster .poster-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -607,14 +655,14 @@ body {
 }
 
 /* 海报图片淡入加载效果 */
-.poster img,
+.poster .poster-img,
 .detail-poster img,
 .meta-poster-preview img,
 .result-poster img {
   opacity: 0;
   transition: opacity 0.3s ease-in;
 }
-.poster img.loaded,
+.poster .poster-img.loaded,
 .detail-poster img.loaded,
 .meta-poster-preview img.loaded,
 .result-poster img.loaded {
@@ -633,19 +681,42 @@ body {
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
-.rating-badge {
+.rating-badges {
   position: absolute;
   top: 6px;
   right: 6px;
-  background: var(--badge-bg);
-  color: var(--amber);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.rating-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid;
   font-size: 12px;
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 4px;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
+.rating-badge-logo { display: block; }
+.rating-badge.douban {
+  color: var(--rate-douban);
+  background: var(--rate-douban-bg);
+  border-color: color-mix(in srgb, var(--rate-douban) 45%, transparent);
+}
+.rating-badge.imdb {
+  color: var(--rate-imdb);
+  background: var(--rate-imdb-bg);
+  border-color: color-mix(in srgb, var(--rate-imdb) 45%, transparent);
+}
+/* 两个 SVG 的字标占画布比例不同（IMDb 黄标仅占 512×512 画布的 50% 高，
+   豆瓣占 24×24 画布的约 85%），按此换算使两者可见高度一致（约 9px） */
+.rating-badge.douban .rating-badge-logo { width: 11px; height: 11px; }
+.rating-badge.imdb .rating-badge-logo { width: 18px; height: 18px; }
 
 /* ===== 列表模式（表格） ===== */
 .film-list {
@@ -754,14 +825,19 @@ body {
 
 /* 第四列：评分 */
 .col-rating { white-space: nowrap; }
+.row-rating-lines { display: flex; flex-direction: column; gap: 2px; }
 .row-rating {
   display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  align-items: baseline;
+  gap: 4px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--amber);
+  font-variant-numeric: tabular-nums;
 }
+.row-rating em { font-style: normal; font-weight: 400; color: var(--text-dim); }
+.row-rating.douban b { color: var(--rate-douban); }
+.row-rating.imdb b { color: var(--rate-imdb); }
+.row-rating.empty b { color: var(--text-dim); }
 
 /* 第五列：观看平台 */
 .col-platforms { min-width: 80px; }
@@ -800,13 +876,16 @@ body {
   min-width: 0;
 }
 .card-line1 .cat-tag { flex-shrink: 0; }
+/* 名称完整显示优先：不截断、不加省略号；一行放不下就换行（长英文串也允许断开）。
+   注意不要把 overflow/text-overflow 写成 ellipsis —— 那正是之前标题被截断的原因 */
 .card-line1 .card-title {
+  flex: 1;
   font-weight: 600;
   font-size: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.3;
   min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .card-line2 {
   display: flex;
@@ -833,11 +912,26 @@ body {
   font-size: 11px;
   color: var(--text-dim);
 }
-.card-platforms {
-  display: flex;
-  flex-wrap: wrap;
+/* 卡片标题行右侧平台：仅 LOGO，无外壳；限宽 45% 保证标题始终可见，超出裁切 */
+.card-plats {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
+  flex: 0 0 auto;
+  max-width: 45%;
+  overflow: hidden;
 }
+.card-line1 .platform-tag {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  font-size: 11px;
+  gap: 0;
+}
+/* 未匹配到 LOGO 的平台退化为名称文本：用弱化色避免抢标题视觉。
+   卡片位置狭窄，只保留前两字（完整名称由 title 悬浮提示） */
+.card-line1 .platform-tag-no-logo { padding: 0; color: var(--text-dim); }
 .chip {
   background: rgba(79, 158, 255, 0.14);
   color: var(--accent);
@@ -940,7 +1034,7 @@ body {
   width: fit-content;
   border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--poster-shadow);
   background: var(--bg-elev2);
 }
 .detail-poster img { height: 100%; width: auto; display: block; }
@@ -962,7 +1056,76 @@ body {
   color: var(--text-dim);
 }
 .tag.genre { color: var(--accent); background: rgba(79, 158, 255, 0.12); }
-.tag.rating { color: var(--amber); background: rgba(255, 176, 32, 0.12); font-weight: 600; }
+/* 详情页评分与 ID：海报下方，豆瓣/IMDb 各占一列，底色取自来源主题色 */
+.detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+  /* 不拉伸等高：无评分的一列内容更矮，stretch 会被拉到与有评分列同高而留白 */
+  align-items: start;
+  /* 提升层级，避免被上方海报溢出的阴影压暗 */
+  position: relative;
+  z-index: 1;
+}
+.detail-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+/* 底色用主题色与弹窗底色混合：既保留豆瓣绿 / IMDb 黄的识别度，
+   又能让 LOGO 与灰色的「无评分」保持可读（纯实色会让同色系的 LOGO 糊掉）。
+   变量与卡片评分徽章共用，保证两处配色一致 */
+.detail-stat.douban {
+  --stat-accent: var(--rate-douban);
+  background: var(--rate-douban-bg);
+  border-color: color-mix(in srgb, var(--rate-douban) 45%, transparent);
+}
+.detail-stat.imdb {
+  --stat-accent: var(--rate-imdb);
+  background: var(--rate-imdb-bg);
+  border-color: color-mix(in srgb, var(--rate-imdb) 45%, transparent);
+}
+/* 固定高度承载 LOGO + 来源名，保证两列评分数字横向对齐 */
+.detail-stat-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+}
+.detail-stat-logo { display: block; width: auto; }
+/* 两个 SVG 的字标占画布比例不同（IMDb 黄标仅占 512×512 画布的 50% 高，
+   豆瓣占 24×24 画布的约 85%），按此换算使两者可见高度一致 */
+.detail-stat.imdb .detail-stat-logo { height: 24px; }
+.detail-stat.douban .detail-stat-logo { height: 14px; }
+.detail-stat-name { font-size: 13px; font-weight: 600; }
+.detail-stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  color: var(--stat-accent);
+}
+/* 评分后的满分，弱化为小字 */
+.detail-stat-max { font-size: 12px; font-weight: 400; opacity: 0.7; }
+/* 有 ID 但无评分：弱化为灰色小字 */
+.detail-stat-value.empty { font-size: 12px; font-weight: 400; color: var(--text-dim); }
+.detail-stat-sub { font-size: 11px; color: var(--text-dim); }
+.detail-stat-id {
+  max-width: 100%;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--stat-accent);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detail-stat-id:hover { text-decoration: underline; }
 /* 详情页分类标签：与同行 .tag 尺寸/圆角统一，避免大小不一致 */
 .detail-tags .cat-tag {
   font-size: 12px;
@@ -970,35 +1133,6 @@ body {
   border-radius: 12px;
   border: none;
 }
-
-/* 详情标题行：名称 + IMDb/豆瓣 ID 链接 */
-.detail-title-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-}
-.detail-title-row h2 { margin: 0; }
-.detail-id-links {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.detail-id-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border-radius: 6px;
-  padding: 2px 8px 2px 5px;
-  font-size: 12px;
-  color: var(--id-tag-text);
-  text-decoration: none;
-  line-height: 1.4;
-}
-.detail-id-link:hover { text-decoration: none; filter: brightness(1.08); }
-.detail-id-link.imdb { background: rgba(255, 200, 70, 0.32); border: 1px solid rgba(255, 200, 70, 0.45); }
-.detail-id-link.douban { background: rgba(76, 175, 80, 0.30); border: 1px solid rgba(76, 175, 80, 0.45); }
 
 /* 观看记录卡片（同一影视的多条观看记录） */
 .viewing-record {
@@ -1477,8 +1611,6 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .platform-name { white-space: nowrap; }
 /* 无图标的平台标签：左右 padding 对称（默认 platform-tag 左 5 右 8 是为给图标留位） */
 .platform-tag-no-logo { padding: 2px 8px; }
-.card-platforms .platform-tag { padding: 1px 6px 1px 4px; font-size: 11px; }
-.card-platforms .platform-tag-no-logo { padding: 1px 6px; }
 .watch-info .platform-list {
   display: flex;
   flex-wrap: wrap;
@@ -1784,6 +1916,29 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   align-items: center;
   gap: 6px;
 }
+/* 后台刷新任务运行中：按钮内显示脉动圆点 + 百分比 */
+.btn-ratings-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.btn-ratings-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: btn-ratings-pulse 1.4s ease-in-out infinite;
+}
+@keyframes btn-ratings-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-ratings-dot { animation: none; }
+}
 
 /* Rating manager modal */
 .rating-manager { max-width: 820px; padding: 24px; }
@@ -1798,6 +1953,11 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .rating-result { color: var(--text-dim); font-size: 12px; }
 .rating-result.err { color: #ffd5d5; display: inline-flex; align-items: center; gap: 4px; }
+/* 正在执行的数据源按钮：外发光标示（其余按钮此时均处于禁用态） */
+.rating-manager .btn-primary.busy,
+.rating-manager .btn-secondary.busy {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
 
 .rating-list {
   display: flex;
@@ -1809,35 +1969,149 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .rating-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 12px;
   background: var(--bg-elev2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
   flex-wrap: wrap;
+  cursor: pointer; /* 整行可点选：选中后「更新」只作用于选中项 */
 }
-.rating-row-info { flex: 1; min-width: 180px; }
+.rating-row.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elev2));
+}
+/* 行首选中标记：空心圆点 → 选中后填主题色并显示勾；与标题行对齐 */
+.rating-row-pick {
+  align-self: flex-start;
+  margin-top: 3px;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: background 0.15s, border-color 0.15s;
+}
+.rating-row-pick.on { background: var(--accent); border-color: var(--accent); }
+/* 选中栏：全选 + 选中说明 */
+.rating-pickbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.rating-pickall {
+  background: var(--bg-elev2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.rating-pickall:hover:not(:disabled) { background: var(--btn-hover-bg); color: var(--text); }
+.rating-picksum { color: var(--text-dim); font-size: 12px; }
+/* 进度摘要中的「已停止」提示 */
+.rating-progress-stopped { color: var(--amber); }
+.rating-row-info { flex: 1; min-width: 180px; padding-bottom: 6px; }
 .rating-row-title { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rating-row-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-.rating-row-cat { font-size: 11px; color: var(--text-dim); }
+/* 影视类型：与名称同行的徽章 */
+.rating-row-cat {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1px 8px;
+}
 .rating-source-badge {
   font-size: 11px;
   border-radius: 8px;
   padding: 1px 8px;
   border: 1px solid var(--border);
 }
-.rating-source-badge.tmdb { color: var(--text-dim); background: var(--bg); }
-.rating-source-badge.douban { color: #fff; background: #258ecd; border-color: #258ecd; }
-.rating-row-inputs { display: flex; gap: 8px; flex: 0 1 360px; min-width: 240px; }
+.rating-source-badge.none { color: var(--text-dim); background: var(--bg); }
+.rating-source-badge.imdb { color: var(--rate-imdb); border-color: var(--rate-imdb); }
+.rating-source-badge.douban { color: var(--rate-douban); border-color: var(--rate-douban); }
+
+/* 各评分来源的最近拉取时间 */
+.rating-sync {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.rating-sync-item { display: inline-flex; align-items: center; gap: 8px; }
+.rating-sync-name { font-size: 12px; font-weight: 600; }
+.rating-sync-name.douban { color: var(--rate-douban); }
+.rating-sync-name.imdb { color: var(--rate-imdb); }
+.rating-sync-time { font-size: 12px; color: var(--text-dim); }
+
+/* 后台刷新任务的进度区块：阶段文案 + 进度条 + 计时（结束时改为结果摘要） */
+.rating-progress {
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.rating-progress-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.rating-progress-phase { font-size: 12px; }
+.rating-progress-phase b { font-variant-numeric: tabular-nums; color: var(--accent); }
+.rating-progress-eta {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.rating-progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-elev2);
+  overflow: hidden;
+}
+.rating-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.rating-progress-track.done .rating-progress-fill { background: var(--rate-douban); }
+.rating-progress-result {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.rating-progress-result.err { color: #ffd5d5; display: inline-flex; align-items: center; gap: 4px; }
+
+.rating-row-inputs { display: flex; gap: 8px; flex: 0 0 208px; }
 .rating-field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
 .rating-field-label {
   font-size: 11px;
   color: var(--text-dim);
   padding-left: 2px;
 }
+/* 输入框与保存按钮均固定 36px 高，行内以 flex-end 对齐使两者底边齐平 */
 .rating-field input {
   width: 100%;
+  height: 36px;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -1846,6 +2120,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   font-size: 13px;
 }
 .rating-field input:focus { outline: none; border-color: var(--accent); }
+.rating-row .btn-primary.small { height: 36px; padding: 0 16px; }
 .rating-row-err {
   flex: 1 1 100%;
   color: #ffd5d5;

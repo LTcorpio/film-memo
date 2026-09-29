@@ -346,6 +346,11 @@ func (d *DB) Stats() (*Stats, error) {
 		JOIN films f ON f.id = v.film_id WHERE f.douban_id IS NULL OR TRIM(f.douban_id) = ''`).Scan(&out.WithoutDouban); err != nil {
 		return nil, err
 	}
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM viewings v
+		JOIN films f ON f.id = v.film_id
+		LEFT JOIN film_metadata m ON m.film_id = f.id WHERE ` + missingRatingCond).Scan(&out.MissingRatings); err != nil {
+		return nil, err
+	}
 
 	rows, err := d.db.Query(`SELECT f.category AS k, COUNT(*) AS c
 		FROM viewings v JOIN films f ON f.id = v.film_id GROUP BY f.category ORDER BY c DESC`)
@@ -547,9 +552,13 @@ func (d *DB) ListFilmsForScrape(force bool, onlyID *int64) ([]FilmBasic, error) 
 }
 
 // ListFilmRefsForRatings 评分刷新用的影片引用列表（同一影视去重，仅含有观看记录的影视）。
+// 同时算出两个来源是否需要重新拉取：缺评分或评价人数为 0（无元数据行时 m.* 为 NULL，同样视为缺失）。
 func (d *DB) ListFilmRefsForRatings(f Filter) ([]FilmRef, error) {
 	where, args := d.buildWhere(f)
-	q := "SELECT DISTINCT f.id, f.name, m.tmdb_id AS tmdb, m.media_type AS mt FROM films f JOIN viewings v ON v.film_id = f.id LEFT JOIN film_metadata m ON m.film_id = f.id"
+	q := `SELECT DISTINCT f.id, f.name, f.category, f.imdb_id, f.douban_id, m.tmdb_id AS tmdb, m.media_type AS mt,
+		CASE WHEN m.douban_rating IS NULL OR m.douban_rating <= 0 OR m.douban_votes IS NULL OR m.douban_votes <= 0 THEN 1 ELSE 0 END AS douban_need,
+		CASE WHEN m.imdb_rating IS NULL OR m.imdb_rating <= 0 OR m.imdb_votes IS NULL OR m.imdb_votes <= 0 THEN 1 ELSE 0 END AS imdb_need
+		FROM films f JOIN viewings v ON v.film_id = f.id LEFT JOIN film_metadata m ON m.film_id = f.id`
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -561,21 +570,73 @@ func (d *DB) ListFilmRefsForRatings(f Filter) ([]FilmRef, error) {
 	out := []FilmRef{}
 	for rows.Next() {
 		var r FilmRef
+		var name, category, imdbID, doubanID, mt sql.NullString
 		var tmdb sql.NullInt64
-		var mt sql.NullString
-		if err := rows.Scan(&r.ID, &r.Name, &tmdb, &mt); err != nil {
+		var doubanNeed, imdbNeed int
+		if err := rows.Scan(&r.ID, &name, &category, &imdbID, &doubanID, &tmdb, &mt, &doubanNeed, &imdbNeed); err != nil {
 			return nil, err
+		}
+		r.Name = name.String
+		r.Category = category.String
+		if imdbID.Valid {
+			r.ImdbID = strings.TrimSpace(imdbID.String)
+		}
+		if doubanID.Valid {
+			r.DoubanID = strings.TrimSpace(doubanID.String)
 		}
 		if tmdb.Valid {
 			v := tmdb.Int64
 			r.TmdbID = &v
 		}
-		if mt.Valid {
-			r.MediaType = mt.String
+		r.MediaType = mt.String
+		r.DoubanNeed = doubanNeed == 1
+		r.ImdbNeed = imdbNeed == 1
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ListRatingSync 取各评分数据源最近一次拉取的记录（按固定顺序 douban、imdb）。
+func (d *DB) ListRatingSync() ([]RatingSync, error) {
+	rows, err := d.db.Query(`SELECT source, last_synced_at, total, updated, skipped, failed, message
+		FROM rating_sync ORDER BY CASE source WHEN 'douban' THEN 0 WHEN 'imdb' THEN 1 ELSE 2 END`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []RatingSync{}
+	for rows.Next() {
+		var r RatingSync
+		var last, msg sql.NullString
+		var total, updated, skipped, failed sql.NullInt64
+		if err := rows.Scan(&r.Source, &last, &total, &updated, &skipped, &failed, &msg); err != nil {
+			return nil, err
+		}
+		if last.Valid {
+			r.LastSyncedAt = &last.String
+		}
+		r.Total, r.Updated, r.Skipped, r.Failed = total.Int64, updated.Int64, skipped.Int64, failed.Int64
+		if msg.Valid && msg.String != "" {
+			r.Message = &msg.String
 		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// UpsertRatingSync 写入/更新某数据源的最近拉取结果。
+func (d *DB) UpsertRatingSync(row RatingSync) error {
+	var msg interface{}
+	if row.Message != nil && *row.Message != "" {
+		msg = *row.Message
+	}
+	_, err := d.db.Exec(`INSERT INTO rating_sync (source, last_synced_at, total, updated, skipped, failed, message)
+		VALUES (?,?,?,?,?,?,?)
+		ON CONFLICT(source) DO UPDATE SET
+		  last_synced_at = excluded.last_synced_at, total = excluded.total, updated = excluded.updated,
+		  skipped = excluded.skipped, failed = excluded.failed, message = excluded.message`,
+		row.Source, row.LastSyncedAt, row.Total, row.Updated, row.Skipped, row.Failed, msg)
+	return err
 }
 
 // --- 写入 ---
@@ -991,9 +1052,38 @@ func (d *DB) DeleteViewing(id int64) (found, filmDeleted bool, locals ImageLocal
 	return true, false, ImageLocals{}, nil
 }
 
-// UpdateRatings 刷新评分（POST /api/ratings/refresh 内单条更新）。
-func (d *DB) UpdateRatings(filmID int64, voteAverage *float64, voteCount *int64, updatedAt string) error {
-	_, err := d.db.Exec("UPDATE film_metadata SET vote_average = ?, vote_count = ?, updated_at = ? WHERE film_id = ?",
-		valFloat64(voteAverage), valInt64(voteCount), updatedAt, filmID)
+// UpdateRatings 写入评分（POST /api/ratings/refresh 内单条更新）。
+// 仅写入 set 中非 nil 的字段，未取到的来源保持原值；无任何字段时不产生写入。
+func (d *DB) UpdateRatings(filmID int64, set RatingSet, updatedAt string) error {
+	if set.Empty() {
+		return nil
+	}
+	sets := []string{}
+	args := []interface{}{}
+	add := func(col string, v interface{}) {
+		sets = append(sets, col+" = ?")
+		args = append(args, v)
+	}
+	if set.DoubanRating != nil {
+		add("douban_rating", *set.DoubanRating)
+	}
+	if set.DoubanVotes != nil {
+		add("douban_votes", *set.DoubanVotes)
+	}
+	if set.ImdbRating != nil {
+		add("imdb_rating", *set.ImdbRating)
+	}
+	if set.ImdbVotes != nil {
+		add("imdb_votes", *set.ImdbVotes)
+	}
+	sets = append(sets, "updated_at = ?")
+	args = append(args, updatedAt)
+	args = append(args, filmID)
+
+	// 无元数据行的影片（仅有 IMDb/豆瓣 ID）也要能记录评分
+	if err := d.EnsureMetaRow(filmID); err != nil {
+		return err
+	}
+	_, err := d.db.Exec("UPDATE film_metadata SET "+strings.Join(sets, ", ")+" WHERE film_id = ?", args...)
 	return err
 }
