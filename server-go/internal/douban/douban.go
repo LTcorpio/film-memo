@@ -43,6 +43,11 @@ const (
 // ErrNotFound 表示该豆瓣条目不存在（404）。
 var ErrNotFound = errors.New("豆瓣条目不存在")
 
+// ErrRateLimited 表示豆瓣风控/限流：按出口 IP 限制，会在响应体里带 code
+// （常见 1309 subject_ip_rate_limit）。重试通常无效，需降低频率或更换出口网络；
+// 此时 rexxar 拿不到评价人数，兜底接口也不提供该字段。
+var ErrRateLimited = errors.New("豆瓣限流（出口 IP 被限制）")
+
 // Rating 是豆瓣评分与评价人数。
 type Rating struct {
 	Value float64 // 0 表示暂无评分
@@ -193,13 +198,42 @@ func (c *Client) retryGet(ctx context.Context, endpoint, referer string) ([]byte
 			return nil, ErrNotFound
 		case status >= 200 && status < 300:
 			return body, nil
+		case status == http.StatusBadRequest:
+			// 豆瓣的风控/限流也走 400，原因在 body 里（如 code 1309）。
+			// 这类按出口 IP 限制，重试无用，直接给出可读原因。
+			if reason := limitReason(body); reason != "" {
+				return nil, fmt.Errorf("%w：%s", ErrRateLimited, reason)
+			}
+			return nil, fmt.Errorf("豆瓣接口返回 HTTP %d", status)
 		case status == http.StatusForbidden || status == http.StatusTooManyRequests || status >= 500:
-			lastErr = fmt.Errorf("豆瓣接口返回 HTTP %d", status)
+			if reason := limitReason(body); reason != "" {
+				lastErr = fmt.Errorf("%w：%s", ErrRateLimited, reason)
+			} else {
+				lastErr = fmt.Errorf("豆瓣接口返回 HTTP %d", status)
+			}
 		default:
 			return nil, fmt.Errorf("豆瓣接口返回 HTTP %d", status)
 		}
 	}
 	return nil, lastErr
+}
+
+// limitReason 从响应体中提取豆瓣风控/限流原因（如 `code 1309 subject_ip_rate_limit`）；
+// 不是风控响应（缺 code）时返回空串。
+func limitReason(body []byte) string {
+	var resp struct {
+		Code             int    `json:"code"`
+		Msg              string `json:"msg"`
+		LocalizedMessage string `json:"localized_message"`
+	}
+	if json.Unmarshal(body, &resp) != nil || resp.Code == 0 {
+		return ""
+	}
+	msg := resp.Msg
+	if msg == "" {
+		msg = resp.LocalizedMessage
+	}
+	return fmt.Sprintf("code %d %s", resp.Code, msg)
 }
 
 // isDialError 判断是否为连接层失败（离线 / DNS 失败 / 拒绝连接）。
