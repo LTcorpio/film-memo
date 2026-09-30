@@ -1702,6 +1702,174 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .edit-form textarea { resize: vertical; min-height: 40px; }
 
+/* ---- 表单日期选择器 ----
+   触发按钮外观对齐 .edit-form 输入框（同高同圆角），展开面板为「快捷选项 + 日历」；
+   开始/结束日期合并为一个范围控件（单日 = 起止同一天），交互口径参考
+   transit-memo 的日期范围筛选器；日历网格由 react-day-picker 渲染，配色随主题变量 */
+.fm-date { position: relative; display: block; }
+
+.fm-date-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  background: var(--bg-elev2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.fm-date-btn:not(:disabled):hover { background: var(--btn-hover-bg); }
+.fm-date-btn:focus-visible { outline: none; border-color: var(--accent); }
+.fm-date-btn[aria-expanded='true'] { border-color: var(--accent); }
+.fm-date-btn .fm-date-ic { flex: none; color: var(--text-dim); }
+.fm-date-btn.on .fm-date-ic { color: var(--accent); }
+/* 空值态文字弱化（同 placeholder），有值时回归正文色 */
+.fm-date-btn .fm-date-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fm-date-btn.on .fm-date-text { color: var(--text); }
+.fm-date-btn .fm-date-chev {
+  flex: none;
+  color: var(--text-dim);
+  transition: transform 0.15s;
+}
+.fm-date-btn[aria-expanded='true'] .fm-date-chev { transform: rotate(180deg); }
+
+/* 展开面板：左列快捷选项 + 右侧日历；右侧空间不足时贴左缘展开（.flip） */
+.fm-date-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 45;
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.fm-date-pop.flip { left: auto; right: 0; }
+
+.fm-date-presets {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 10px 0 0;
+  border-right: 1px solid var(--border);
+}
+.fm-date-preset {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fm-date-preset:hover { background: var(--bg-elev2); color: var(--text); }
+.fm-date-preset.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 日历主题: 沿用应用主色，压缩为紧凑尺寸，区间用主色淡染底纹 */
+.fm-date-pop .rdp-root {
+  --rdp-accent-color: var(--accent);
+  --rdp-accent-background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  --rdp-day-width: 32px;
+  --rdp-day-height: 32px;
+  --rdp-day_button-width: 30px;
+  --rdp-day_button-height: 30px;
+  --rdp-day_button-border-radius: 8px;
+  --rdp-selected-border: none;
+  --rdp-today-color: var(--accent);
+  --rdp-months-gap: 20px;
+  --rdp-nav_button-width: 28px;
+  --rdp-nav_button-height: 28px;
+  --rdp-nav-height: 32px;
+  --rdp-range_middle-background-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  --rdp-range_middle-color: var(--text);
+  --rdp-range_start-date-background-color: var(--accent);
+  --rdp-range_end-date-background-color: var(--accent);
+  --rdp-outside-opacity: 0.4;
+  color: var(--text);
+  font-size: 13px;
+}
+/* 默认选中态会放大字号（large），压缩回面板字号，避免选中日文字跳动 */
+.fm-date-pop .rdp-selected { font-size: inherit; font-weight: 600; }
+.fm-date-pop .rdp-month_caption { font-size: 14px; font-weight: 600; }
+.fm-date-pop .rdp-weekday { font-size: 11px; }
+.fm-date-pop .rdp-button_previous:hover,
+.fm-date-pop .rdp-button_next:hover { background: var(--bg-elev2); border-radius: 8px; }
+/* hover 规则在前：起止端点规则在后，悬浮选中日时保持主色底 */
+.fm-date-pop .rdp-day_button:hover { background: var(--bg-elev2); }
+/* 区间中间段: 整格淡色底纹，日期按钮透明以连成连续条带 */
+.fm-date-pop .rdp-range_middle .rdp-day_button { background: transparent; }
+.fm-date-pop .rdp-range_middle .rdp-day_button:hover {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+/* 选中实底块: 单日期模式与此前"只选了开始日"的进行中状态;
+   区间中间段同样带 .rdp-selected，需排除（保持淡色条带） */
+.fm-date-pop .rdp-selected:not(.rdp-range_middle) .rdp-day_button {
+  background: var(--accent);
+  color: #fff;
+}
+.fm-date-pop .rdp-range_start .rdp-day_button,
+.fm-date-pop .rdp-range_end .rdp-day_button {
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+}
+/* 下拉式年月标题（快速跳到任意年月） */
+.fm-date-pop .rdp-dropdown_root { border-radius: 6px; }
+.fm-date-pop .rdp-dropdown_root:hover { background: var(--bg-elev2); }
+/* 标题内的隐藏 select（透明浮层，点击弹出原生下拉）不应受 .edit-form select 尺寸/配色影响 */
+.fm-date-pop .rdp-dropdown {
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+@media (max-width: 760px) {
+  .fm-date-pop {
+    left: auto;
+    right: 0;
+    flex-direction: column;
+    max-width: calc(100vw - 32px);
+  }
+
+  .fm-date-presets {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 0 0 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
 /* ---- 图片替换工具条 ---- */
 .detail-main.edit-layout {
   display: flex;

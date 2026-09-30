@@ -7,7 +7,8 @@ import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
 import MetaSearch from './MetaSearch.jsx';
 import ConfirmDialog from './ConfirmDialog.jsx';
-import FilmForm, { filmToForm, filmFormToPatches, episodeUnit, DateInput } from './FilmForm.jsx';
+import FilmForm, { filmToForm, filmFormToPatches, episodeUnit } from './FilmForm.jsx';
+import { DatePicker } from './DatePicker.jsx';
 
 const ICON_BASE = '/icon';
 
@@ -206,7 +207,7 @@ function MetaForm({ value, onChange }) {
           <input value={value.directors || ''} onChange={(e) => set('directors', e.target.value)} />
         </label>
         <label>上映日期
-          <DateInput value={value.releaseDate} onChange={(v) => set('releaseDate', v)} />
+          <DatePicker value={value.releaseDate} onChange={(v) => set('releaseDate', v)} title="上映日期" />
         </label>
         <label>状态
           <input value={value.status || ''} placeholder="如 Released" onChange={(e) => set('status', e.target.value)} />

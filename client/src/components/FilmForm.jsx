@@ -1,4 +1,5 @@
 import Icon from './Icon.jsx';
+import { DateRangePicker } from './DatePicker.jsx';
 
 export const CATEGORY_OPTS = ['电影', '电视剧', '网剧', '综艺', '动漫', '纪录片', '短剧'];
 
@@ -26,28 +27,11 @@ function YearInput({ value, onChange, disabled }) {
   );
 }
 
-/** 日期输入：限定四位年份（min/max），忽略超出四位年份的非法输入 */
-export function DateInput({ value, onChange, disabled }) {
-  return (
-    <input
-      type="date"
-      min="1000-01-01"
-      max="9999-12-31"
-      disabled={disabled}
-      value={value || ''}
-      onChange={(e) => {
-        const v = e.target.value;
-        if (v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v)) onChange(v || null);
-      }}
-    />
-  );
-}
-
 /**
  * 影视 + 观看记录编辑表单（可在新增/编辑复用）。
  * 分为两组：
  *  - 元信息（影视级）：名称、类别、观看年份、上映年份、总集数、制片国家、IMDb、豆瓣 ID
- *  - 观看记录（观看级）：开始/结束观看日期、观看平台、观看地点、备注
+ *  - 观看记录（观看级）：观看日期（开始–结束合并为一个范围选择）、观看平台、观看地点、备注
  * viewingOptions 的条目支持 isNew / pendingRemove 标记，
  * 用于展示「暂存待保存」的新增/移除状态（点击保存后才真正提交）。
  */
@@ -163,11 +147,14 @@ export default function FilmForm({
         <label>观看年份
           <YearInput value={value.watchYear} onChange={(v) => set('watchYear', v)} disabled={viewingRemoved} />
         </label>
-        <label>开始观看日期
-          <DateInput value={value.startDate} onChange={(v) => set('startDate', v)} disabled={viewingRemoved} />
-        </label>
-        <label>结束观看日期
-          <DateInput value={value.endDate} onChange={(v) => set('endDate', v)} disabled={viewingRemoved} />
+        <label>观看日期
+          <DateRangePicker
+            from={value.startDate}
+            to={value.endDate}
+            disabled={viewingRemoved}
+            title="开始观看日期 – 结束观看日期（选单日表示当天看完）"
+            onChange={(from, to) => onChange({ ...value, startDate: from, endDate: to })}
+          />
         </label>
       </div>
       <label>观看平台（逗号分隔）
