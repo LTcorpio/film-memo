@@ -72,7 +72,7 @@ function RatingRow({ film, selected, onToggle, onSaved }) {
   const persistedImdbId = norm(film.imdbId);
   const persistedDoubanId = norm(film.doubanId);
   const dirty = norm(imdbId) !== persistedImdbId || norm(doubanId) !== persistedDoubanId;
-  // 徽章内只显示精简评分，评价人数不在此展示
+  // 徽章内只显示精简评分
   const imdbScore = film.imdbRating > 0 ? film.imdbRating.toFixed(1) : '—';
   const doubanScore = film.doubanRating > 0 ? film.doubanRating.toFixed(1) : '—';
 
@@ -364,7 +364,7 @@ export default function RatingManager({ films, filters, job, onClose, onChanged 
             className={`btn-primary${busySource === 'douban' ? ' busy' : ''}`}
             disabled={running || films.length === 0}
             onClick={() => doRefresh('douban')}
-            title="补齐缺失的豆瓣评分（已有评分与评价人数的会跳过）"
+            title="补齐缺失的豆瓣评分（已有评分的会跳过）"
           >
             <Icon name="refresh" size={14} /> 更新豆瓣评分{pickSuffix}
           </button>
@@ -373,7 +373,7 @@ export default function RatingManager({ films, filters, job, onClose, onChanged 
             className={`btn-primary${busySource === 'imdb' ? ' busy' : ''}`}
             disabled={running || films.length === 0}
             onClick={() => doRefresh('imdb')}
-            title="补齐缺失的 IMDb 评分（已有评分与投票数的会跳过）"
+            title="补齐缺失的 IMDb 评分（已有评分的会跳过）"
           >
             <Icon name="refresh" size={14} /> 更新 IMDb 评分{pickSuffix}
           </button>

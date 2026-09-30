@@ -70,9 +70,7 @@ CREATE TABLE IF NOT EXISTS film_metadata (
   vote_average        REAL,                     -- TMDB 评分（保留字段，界面不再展示）
   vote_count          INTEGER,                  -- TMDB 评价人数（保留字段）
   douban_rating       REAL,                     -- 豆瓣评分
-  douban_votes        INTEGER,                  -- 豆瓣评价人数
   imdb_rating         REAL,                     -- IMDb 评分
-  imdb_votes          INTEGER,                  -- IMDb 投票数
   directors           TEXT,
   cast                TEXT,
   release_date        TEXT,
@@ -116,8 +114,7 @@ var metadataMigrateCols = []struct {
 	name string
 	typ  string
 }{
-	{"douban_rating", "REAL"}, {"douban_votes", "INTEGER"},
-	{"imdb_rating", "REAL"}, {"imdb_votes", "INTEGER"},
+	{"douban_rating", "REAL"}, {"imdb_rating", "REAL"},
 	{"poster_local", "TEXT"}, {"backdrop_local", "TEXT"}, {"directors", "TEXT"},
 	{"cast", "TEXT"}, {"release_date", "TEXT"}, {"status", "TEXT"}, {"tagline", "TEXT"},
 	{"original_language", "TEXT"}, {"spoken_languages", "TEXT"}, {"origin_country", "TEXT"},
@@ -217,6 +214,15 @@ func (d *DB) migrate() error {
 		}
 	}
 
+	// 评分人数已不再采集与展示：旧库中的两列直接物理删除（幂等，新库本就不存在）
+	for _, col := range []string{"douban_votes", "imdb_votes"} {
+		if metaCols[col] {
+			if _, err := d.db.Exec("ALTER TABLE film_metadata DROP COLUMN " + col + ";"); err != nil {
+				return fmt.Errorf("drop film_metadata.%s: %w", col, err)
+			}
+		}
+	}
+
 	// 兼容旧库：补齐 films.douban_id
 	filmCols, err := d.columns("films")
 	if err != nil {
@@ -288,9 +294,7 @@ func (d *DB) cleanNumericCols() error {
 		{"film_metadata", "vote_average", "REAL"},
 		{"film_metadata", "vote_count", "INTEGER"},
 		{"film_metadata", "douban_rating", "REAL"},
-		{"film_metadata", "douban_votes", "INTEGER"},
 		{"film_metadata", "imdb_rating", "REAL"},
-		{"film_metadata", "imdb_votes", "INTEGER"},
 		{"film_metadata", "number_of_seasons", "INTEGER"},
 		{"film_metadata", "number_of_episodes", "INTEGER"},
 		{"film_metadata", "budget", "INTEGER"},
@@ -660,17 +664,6 @@ func (d *DB) columns(table string) (map[string]bool, error) {
 	return cols, rows.Err()
 }
 
-// missingRatingCond 待补评分的判定条件：该来源有 ID，但缺评分或评价人数为 0。
-// 与 ListFilmRefsForRatings 中的 douban_need / imdb_need 口径一致，
-// 保证「筛选出的条目」与「刷新时真正会去抓的条目」相同。
-const missingRatingCond = `((
-	(f.douban_id IS NOT NULL AND TRIM(f.douban_id) <> '') AND
-	(m.douban_rating IS NULL OR m.douban_rating <= 0 OR m.douban_votes IS NULL OR m.douban_votes <= 0)
-) OR (
-	(f.imdb_id IS NOT NULL AND TRIM(f.imdb_id) <> '') AND
-	(m.imdb_rating IS NULL OR m.imdb_rating <= 0 OR m.imdb_votes IS NULL OR m.imdb_votes <= 0)
-))`
-
 // buildWhere 构造筛选 WHERE 子句与参数（GET /api/films 与 ratings/refresh 共用）。
 // v2 模型下观看字段在 viewings 表（别名 v），影视字段在 films 表（别名 f）。
 func (d *DB) buildWhere(f Filter) ([]string, []interface{}) {
@@ -694,8 +687,6 @@ func (d *DB) buildWhere(f Filter) ([]string, []interface{}) {
 		where = append(where, "(f.imdb_id IS NULL OR TRIM(f.imdb_id) = '')")
 	} else if f.Missing == "douban" {
 		where = append(where, "(f.douban_id IS NULL OR TRIM(f.douban_id) = '')")
-	} else if f.Missing == "rating" {
-		where = append(where, missingRatingCond)
 	}
 	if len(f.IDs) > 0 {
 		// 只在指定影视范围内操作（评分管理里勾选后刷新）

@@ -4,11 +4,16 @@ import PlatformTag from './PlatformTag.jsx';
 
 const ICON_BASE = '/icon';
 
-export default function FilmCard({ film, onClick, onContextMenu }) {
+export default function FilmCard({ film, onClick, onContextMenu, ratingView = 'all' }) {
   const meta = film.metadata;
   const title = meta?.title || film.name;
   const year = film.releaseYear || meta?.releaseYear || '';
   const [imgLoaded, setImgLoaded] = useState(false);
+  // 评分展示偏好：只渲染被允许的来源（none 时两个都是 false，整块徽章不渲染）
+  const showDouban = ratingView === 'all' || ratingView === 'douban';
+  const showImdb = ratingView === 'all' || ratingView === 'imdb';
+  const hasDouban = showDouban && film.doubanRating > 0;
+  const hasImdb = showImdb && film.imdbRating > 0;
 
   return (
     <div
@@ -36,15 +41,15 @@ export default function FilmCard({ film, onClick, onContextMenu }) {
             <Icon name="alert" size={11} /> 无元数据
           </span>
         )}
-        {(film.doubanRating > 0 || film.imdbRating > 0) && (
+        {(hasDouban || hasImdb) && (
           <div className="rating-badges">
-            {film.doubanRating > 0 && (
+            {hasDouban && (
               <span className="rating-badge douban" title={`豆瓣评分 ${film.doubanRating}`}>
                 <img className="rating-badge-logo" src={`${ICON_BASE}/douban.svg`} alt="" />
                 {film.doubanRating.toFixed(1)}
               </span>
             )}
-            {film.imdbRating > 0 && (
+            {hasImdb && (
               <span className="rating-badge imdb" title={`IMDb 评分 ${film.imdbRating}`}>
                 <img className="rating-badge-logo" src={`${ICON_BASE}/imdb.svg`} alt="" />
                 {film.imdbRating.toFixed(1)}

@@ -5,7 +5,7 @@
 //
 //	GET https://m.douban.com/rexxar/api/v2/{movie|tv}/{id}
 //	    需带移动端 UA 与 Referer: https://m.douban.com/{movie|tv}/subject/{id}/
-//	    响应 rating.value / rating.count
+//	    响应 rating.value
 //
 // 兜底接口（rexxar 均不可用时）：
 //
@@ -45,13 +45,12 @@ var ErrNotFound = errors.New("豆瓣条目不存在")
 
 // ErrRateLimited 表示豆瓣风控/限流：按出口 IP 限制，会在响应体里带 code
 // （常见 1309 subject_ip_rate_limit）。重试通常无效，需降低频率或更换出口网络；
-// 此时 rexxar 拿不到评价人数，兜底接口也不提供该字段。
+// 此时会降级到 PC 端兜底接口（不同主机，仍可能取到评分）。
 var ErrRateLimited = errors.New("豆瓣限流（出口 IP 被限制）")
 
-// Rating 是豆瓣评分与评价人数。
+// Rating 是豆瓣评分。
 type Rating struct {
 	Value float64 // 0 表示暂无评分
-	Count int64   // 评价人数；兜底接口不返回时为 0
 }
 
 // Client 是豆瓣接口客户端。
@@ -119,16 +118,15 @@ func (c *Client) rexxar(ctx context.Context, id, mediaType string) (*Rating, err
 	var resp struct {
 		Rating struct {
 			Value float64 `json:"value"`
-			Count int64   `json:"count"`
 		} `json:"rating"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, fmt.Errorf("解析豆瓣响应失败: %w", err)
 	}
-	return &Rating{Value: resp.Rating.Value, Count: resp.Rating.Count}, nil
+	return &Rating{Value: resp.Rating.Value}, nil
 }
 
-// abstract 调用 PC 端条目摘要接口（无评价人数）。
+// abstract 调用 PC 端条目摘要接口（评分字段为字符串）。
 func (c *Client) abstract(ctx context.Context, id string) (*Rating, error) {
 	endpoint := abstractAPI + "?subject_id=" + url.QueryEscape(id)
 	var raw []byte

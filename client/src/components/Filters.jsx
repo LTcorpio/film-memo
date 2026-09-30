@@ -48,7 +48,6 @@ export default function Filters({ value, onChange, onReset, options, activeCount
             <option value="">无</option>
             <option value="imdb">无 IMDb</option>
             <option value="douban">无豆瓣 ID</option>
-            <option value="rating">待补评分</option>
           </select>
         </label>
 

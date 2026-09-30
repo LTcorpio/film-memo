@@ -19,6 +19,20 @@ const VIEW_KEY = 'film-memo:view-mode';
 const LIST_SIZE_KEY = 'film-memo:list-size';
 const THEME_KEY = 'film-memo:theme';
 const READONLY_KEY = 'film-memo:readonly';
+const RATING_VIEW_KEY = 'film-memo:rating-view';
+
+// 评分展示偏好：作用于卡片徽章、列表评分列与详情弹窗评分块（评分管理不受影响）
+const RATING_VIEWS = [
+  { k: 'all', label: '全部', title: '展示全部评分' },
+  { k: 'douban', label: '豆瓣', title: '只展示豆瓣评分' },
+  { k: 'imdb', label: 'IMDb', title: '只展示 IMDb 评分' },
+  { k: 'none', label: '不展示', title: '不展示评分' },
+];
+
+function loadRatingView() {
+  const v = localStorage.getItem(RATING_VIEW_KEY);
+  return RATING_VIEWS.some((x) => x.k === v) ? v : 'all';
+}
 
 function loadRows() {
   const v = Number(localStorage.getItem(ROWS_KEY));
@@ -70,6 +84,7 @@ export default function App() {
   const [listSize, setListSize] = useState(loadListSize);
   const [theme, setTheme] = useState(loadTheme);
   const [readOnly, setReadOnly] = useState(loadReadOnly);
+  const [ratingView, setRatingView] = useState(loadRatingView);
   const gridRef = useRef(null);
 
   // 主题切换：写 data-theme 属性 + 持久化
@@ -125,6 +140,12 @@ export default function App() {
     setViewMode(m);
     try { localStorage.setItem(VIEW_KEY, m); } catch {}
     setPage(1);
+  };
+
+  // 评分展示偏好：持久化，卡片 / 列表 / 详情即时生效
+  const changeRatingView = (v) => {
+    setRatingView(v);
+    try { localStorage.setItem(RATING_VIEW_KEY, v); } catch {}
   };
 
   // 列表模式改变每页条数：持久化并回到第一页
@@ -351,10 +372,6 @@ export default function App() {
           onSelect={(k) =>
             updateFilters((f) => ({ ...f, category: f.category === k ? '' : k }))
           }
-          missing={filters.missing}
-          onSelectMissing={(v) =>
-            updateFilters((f) => ({ ...f, missing: f.missing === v ? '' : v }))
-          }
           readOnly={readOnly}
           onAdd={() => setAddingFilm(true)}
         />
@@ -381,23 +398,38 @@ export default function App() {
               ? '无匹配记录'
               : `第 ${effectivePage}/${pageCount || 1} 页 · 每页 ${pageSize} 条 · 共 ${films.length} 条结果`}
         </span>
-        <div className="view-toggle" role="group" aria-label="显示模式">
-          <button
-            type="button"
-            className={viewMode === 'grid' ? 'active' : ''}
-            onClick={() => changeViewMode('grid')}
-            title="海报模式"
-          >
-            <Icon name="grid" size={15} />
-          </button>
-          <button
-            type="button"
-            className={viewMode === 'list' ? 'active' : ''}
-            onClick={() => changeViewMode('list')}
-            title="列表模式"
-          >
-            <Icon name="list" size={15} />
-          </button>
+        <div className="meta-controls">
+          <div className="rating-toggle" role="group" aria-label="评分展示">
+            {RATING_VIEWS.map((v) => (
+              <button
+                key={v.k}
+                type="button"
+                className={ratingView === v.k ? 'active' : ''}
+                onClick={() => changeRatingView(v.k)}
+                title={v.title}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+          <div className="view-toggle" role="group" aria-label="显示模式">
+            <button
+              type="button"
+              className={viewMode === 'grid' ? 'active' : ''}
+              onClick={() => changeViewMode('grid')}
+              title="海报模式"
+            >
+              <Icon name="grid" size={15} />
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'list' ? 'active' : ''}
+              onClick={() => changeViewMode('list')}
+              title="列表模式"
+            >
+              <Icon name="list" size={15} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -411,6 +443,7 @@ export default function App() {
             <FilmCard
               key={f.id}
               film={f}
+              ratingView={ratingView}
               onClick={() => openDetail(f)}
               onContextMenu={(e) => handleCardContextMenu(e, f)}
             />
@@ -419,6 +452,7 @@ export default function App() {
       ) : (
         <FilmList
           films={pagedFilms}
+          ratingView={ratingView}
           onClick={(f) => openDetail(f)}
           onContextMenu={handleCardContextMenu}
         />
@@ -443,6 +477,7 @@ export default function App() {
           initialEditing={detailInitial.editing}
           initialMetaOpen={detailInitial.metaOpen}
           readOnly={readOnly}
+          ratingView={ratingView}
           onChanged={() => {
             // 刷新详情（含全部观看记录）、列表与统计
             // 注意：详情对象（fetchFilm 返回）只有 id 无 filmId，需做回退取值
@@ -582,12 +617,10 @@ function AddFilmModal({ onClose, onCreated }) {
   );
 }
 
-function CategoryBreakdown({ stats, active, onSelect, missing, onSelectMissing, readOnly, onAdd }) {
+function CategoryBreakdown({ stats, active, onSelect, readOnly, onAdd }) {
   const total = stats.total;
   const noMetaCount = stats.withoutMetadata ?? 0;
-  const ratingCount = stats.missingRatings ?? 0;
   const NO_META = '__no_meta__';
-  const MISSING_RATING = 'rating';
   return (
     <div className="cat-cards">
       <button
@@ -608,17 +641,6 @@ function CategoryBreakdown({ stats, active, onSelect, missing, onSelectMissing, 
         >
           <span className="cat-card-name"><Icon name="alert" size={13} /> 无元数据</span>
           <span className="cat-card-count">{noMetaCount}</span>
-        </button>
-      )}
-      {ratingCount > 0 && (
-        <button
-          type="button"
-          className={`cat-card cat-card-missing-rating${missing === MISSING_RATING ? ' active' : ''}`}
-          onClick={() => onSelectMissing(MISSING_RATING)}
-          title={`待补评分: ${ratingCount} 条记录缺评分或缺评价人数，刷新评分时只会补这些`}
-        >
-          <span className="cat-card-name"><Icon name="star" size={13} /> 待补评分</span>
-          <span className="cat-card-count">{ratingCount}</span>
         </button>
       )}
       {stats.byCategory.map((x) => (

@@ -346,11 +346,6 @@ func (d *DB) Stats() (*Stats, error) {
 		JOIN films f ON f.id = v.film_id WHERE f.douban_id IS NULL OR TRIM(f.douban_id) = ''`).Scan(&out.WithoutDouban); err != nil {
 		return nil, err
 	}
-	if err := d.db.QueryRow(`SELECT COUNT(*) FROM viewings v
-		JOIN films f ON f.id = v.film_id
-		LEFT JOIN film_metadata m ON m.film_id = f.id WHERE ` + missingRatingCond).Scan(&out.MissingRatings); err != nil {
-		return nil, err
-	}
 
 	rows, err := d.db.Query(`SELECT f.category AS k, COUNT(*) AS c
 		FROM viewings v JOIN films f ON f.id = v.film_id GROUP BY f.category ORDER BY c DESC`)
@@ -552,12 +547,12 @@ func (d *DB) ListFilmsForScrape(force bool, onlyID *int64) ([]FilmBasic, error) 
 }
 
 // ListFilmRefsForRatings 评分刷新用的影片引用列表（同一影视去重，仅含有观看记录的影视）。
-// 同时算出两个来源是否需要重新拉取：缺评分或评价人数为 0（无元数据行时 m.* 为 NULL，同样视为缺失）。
+// 同时算出两个来源是否需要重新拉取：缺评分（无元数据行时 m.* 为 NULL，同样视为缺失）。
 func (d *DB) ListFilmRefsForRatings(f Filter) ([]FilmRef, error) {
 	where, args := d.buildWhere(f)
 	q := `SELECT DISTINCT f.id, f.name, f.category, f.imdb_id, f.douban_id, m.tmdb_id AS tmdb, m.media_type AS mt,
-		CASE WHEN m.douban_rating IS NULL OR m.douban_rating <= 0 OR m.douban_votes IS NULL OR m.douban_votes <= 0 THEN 1 ELSE 0 END AS douban_need,
-		CASE WHEN m.imdb_rating IS NULL OR m.imdb_rating <= 0 OR m.imdb_votes IS NULL OR m.imdb_votes <= 0 THEN 1 ELSE 0 END AS imdb_need
+		CASE WHEN m.douban_rating IS NULL OR m.douban_rating <= 0 THEN 1 ELSE 0 END AS douban_need,
+		CASE WHEN m.imdb_rating IS NULL OR m.imdb_rating <= 0 THEN 1 ELSE 0 END AS imdb_need
 		FROM films f JOIN viewings v ON v.film_id = f.id LEFT JOIN film_metadata m ON m.film_id = f.id`
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
@@ -1067,14 +1062,8 @@ func (d *DB) UpdateRatings(filmID int64, set RatingSet, updatedAt string) error 
 	if set.DoubanRating != nil {
 		add("douban_rating", *set.DoubanRating)
 	}
-	if set.DoubanVotes != nil {
-		add("douban_votes", *set.DoubanVotes)
-	}
 	if set.ImdbRating != nil {
 		add("imdb_rating", *set.ImdbRating)
-	}
-	if set.ImdbVotes != nil {
-		add("imdb_votes", *set.ImdbVotes)
 	}
 	sets = append(sets, "updated_at = ?")
 	args = append(args, updatedAt)

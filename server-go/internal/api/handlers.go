@@ -738,7 +738,7 @@ func (s *Server) runRatingsJob(ctx context.Context, f db.Filter, source string, 
 	job.setTotal(progressUnits(rows, runDouban, runImdb))
 
 	// IMDb：先确保数据集可用，再一次流式查询本次所需的全部 tconst。
-	// 只收集「缺评分或缺评价人数」的影片，已有数据的条目不再重复抓取。
+	// 只收集「缺评分」的影片，已有评分的条目不再重复抓取。
 	imdbIDs := []string{}
 	for i := range rows {
 		if rows[i].ImdbID != "" && rows[i].ImdbNeed {
@@ -789,8 +789,8 @@ func (s *Server) runRatingsJob(ctx context.Context, f db.Filter, source string, 
 				res.imdbOutcome, res.imdbErr = "failed", imdbErr
 			default:
 				if rt, ok := imdbIndex[rr.ImdbID]; ok {
-					v, c := rt.Average, rt.Votes
-					res.set.ImdbRating, res.set.ImdbVotes = &v, &c
+					v := rt.Average
+					res.set.ImdbRating = &v
 					res.imdbOutcome = "updated"
 				} else {
 					res.imdbOutcome = "skipped"
@@ -806,8 +806,8 @@ func (s *Server) runRatingsJob(ctx context.Context, f db.Filter, source string, 
 				// 条目不存在或尚无评分：跳过，避免把 0 分写入库
 				res.doubanOutcome = "skipped"
 			default:
-				v, c := rt.Value, rt.Count
-				res.set.DoubanRating, res.set.DoubanVotes = &v, &c
+				v := rt.Value
+				res.set.DoubanRating = &v
 				res.doubanOutcome = "updated"
 			}
 			job.advance() // 每完成一部影片的豆瓣抓取推进一格进度

@@ -65,8 +65,11 @@ function IdLine({ icon, alt, href, value, source }) {
 /**
  * 列表模式：表格样式，每部影视一行。
  * 列：海报 / 名称+类别年份集数 / IMDb+豆瓣 / 评分 / 观看平台 / 观看日期
+ * ratingView：评分展示偏好（all / douban / imdb / none），过滤「评分」列展示的来源
  */
-export default function FilmList({ films, onClick, onContextMenu }) {
+export default function FilmList({ films, onClick, onContextMenu, ratingView = 'all' }) {
+  const showDouban = ratingView === 'all' || ratingView === 'douban';
+  const showImdb = ratingView === 'all' || ratingView === 'imdb';
   return (
     <div className="film-list">
       <table className="film-table">
@@ -127,16 +130,20 @@ export default function FilmList({ films, onClick, onContextMenu }) {
                   </div>
                 </td>
                 <td className="col-rating">
-                  {film.doubanRating > 0 || film.imdbRating > 0 ? (
+                  {(showDouban || showImdb) && (film.doubanRating > 0 || film.imdbRating > 0) ? (
                     <div className="row-rating-lines">
-                      <span className={`row-rating douban${film.doubanRating > 0 ? '' : ' empty'}`}>
-                        <em>豆瓣</em>
-                        <b>{film.doubanRating > 0 ? film.doubanRating.toFixed(1) : '—'}</b>
-                      </span>
-                      <span className={`row-rating imdb${film.imdbRating > 0 ? '' : ' empty'}`}>
-                        <em>IMDb</em>
-                        <b>{film.imdbRating > 0 ? film.imdbRating.toFixed(1) : '—'}</b>
-                      </span>
+                      {showDouban && (
+                        <span className={`row-rating douban${film.doubanRating > 0 ? '' : ' empty'}`}>
+                          <em>豆瓣</em>
+                          <b>{film.doubanRating > 0 ? film.doubanRating.toFixed(1) : '—'}</b>
+                        </span>
+                      )}
+                      {showImdb && (
+                        <span className={`row-rating imdb${film.imdbRating > 0 ? '' : ' empty'}`}>
+                          <em>IMDb</em>
+                          <b>{film.imdbRating > 0 ? film.imdbRating.toFixed(1) : '—'}</b>
+                        </span>
+                      )}
                     </div>
                   ) : (
                     <span className="row-dim">—</span>

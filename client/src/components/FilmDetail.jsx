@@ -288,78 +288,71 @@ function ImageTools({ filmId, type, label, hasLocal, hasRemote, onChanged, onErr
   );
 }
 
-/** 评价人数：3345837 → 334.6万 */
-function formatVotes(n) {
-  if (!n) return '';
-  return n >= 10000 ? `${(n / 10000).toFixed(1)}万` : String(n);
-}
-
 /**
- * 海报下方的评分与 ID：豆瓣 / IMDb 各占一列，整块以来源主题色为底，
- * 自上而下为 来源 LOGO + 名称、评分（无评分时灰字「无评分」）、评价人数、可点击的 ID。
- * 某来源既无 ID 也无评分时该列不渲染；两列都没有则整块不渲染。
+ * 海报下方的评分与 ID：豆瓣 / IMDb 各占一行（上下排列），整行以来源主题色为底。
+ * 每行左侧为来源 LOGO + 可点击的 ID，右侧为评分值（无评分时灰字「无评分」）。
+ * ratingView：评分展示偏好（all / douban / imdb / none），只渲染被允许的来源；
+ * 某来源既无 ID 也无评分时该行不渲染；两行都没有则整块不渲染。
  */
-function DetailStats({ film }) {
-  const { doubanId, doubanRating, doubanVotes, imdbId, imdbRating, imdbVotes } = film;
-  const hasDouban = Boolean(doubanId) || doubanRating > 0;
-  const hasImdb = Boolean(imdbId) || imdbRating > 0;
+function DetailStats({ film, ratingView = 'all' }) {
+  const { doubanId, doubanRating, imdbId, imdbRating } = film;
+  const showDouban = ratingView === 'all' || ratingView === 'douban';
+  const showImdb = ratingView === 'all' || ratingView === 'imdb';
+  const hasDouban = showDouban && (Boolean(doubanId) || doubanRating > 0);
+  const hasImdb = showImdb && (Boolean(imdbId) || imdbRating > 0);
   if (!hasDouban && !hasImdb) return null;
   return (
     <div className="detail-stats">
       {hasDouban && (
         <div className="detail-stat douban">
-          <div className="detail-stat-head">
-            <img className="detail-stat-logo" src={`${ICON_BASE}/douban.svg`} alt="" />
-            <span className="detail-stat-name">豆瓣</span>
-          </div>
-          <div className={`detail-stat-value${doubanRating > 0 ? '' : ' empty'}`}>
+          <span className="detail-stat-left">
+            <img className="detail-stat-logo" src={`${ICON_BASE}/douban.svg`} alt="豆瓣" />
+            {doubanId && (
+              <a
+                className="detail-stat-id"
+                href={`https://movie.douban.com/subject/${doubanId}/`}
+                target="_blank"
+                rel="noreferrer"
+                title={`豆瓣: ${doubanId}`}
+              >
+                {doubanId}
+              </a>
+            )}
+          </span>
+          <span className={`detail-stat-value${doubanRating > 0 ? '' : ' empty'}`}>
             {doubanRating > 0 ? (
               <>
                 {doubanRating.toFixed(1)}
                 <span className="detail-stat-max"> / 10</span>
               </>
             ) : '无评分'}
-          </div>
-          {doubanVotes > 0 && <div className="detail-stat-sub">{formatVotes(doubanVotes)} 人评价</div>}
-          {doubanId && (
-            <a
-              className="detail-stat-id"
-              href={`https://movie.douban.com/subject/${doubanId}/`}
-              target="_blank"
-              rel="noreferrer"
-              title={`豆瓣: ${doubanId}`}
-            >
-              {doubanId}
-            </a>
-          )}
+          </span>
         </div>
       )}
       {hasImdb && (
         <div className="detail-stat imdb">
-          <div className="detail-stat-head">
-            <img className="detail-stat-logo" src={`${ICON_BASE}/imdb.svg`} alt="" />
-            <span className="detail-stat-name">IMDb</span>
-          </div>
-          <div className={`detail-stat-value${imdbRating > 0 ? '' : ' empty'}`}>
+          <span className="detail-stat-left">
+            <img className="detail-stat-logo" src={`${ICON_BASE}/imdb.svg`} alt="IMDb" />
+            {imdbId && (
+              <a
+                className="detail-stat-id"
+                href={`https://www.imdb.com/title/${imdbId}`}
+                target="_blank"
+                rel="noreferrer"
+                title={`IMDb: ${imdbId}`}
+              >
+                {imdbId}
+              </a>
+            )}
+          </span>
+          <span className={`detail-stat-value${imdbRating > 0 ? '' : ' empty'}`}>
             {imdbRating > 0 ? (
               <>
                 {imdbRating.toFixed(1)}
                 <span className="detail-stat-max"> / 10</span>
               </>
             ) : '无评分'}
-          </div>
-          {imdbVotes > 0 && <div className="detail-stat-sub">{formatVotes(imdbVotes)} 人评分</div>}
-          {imdbId && (
-            <a
-              className="detail-stat-id"
-              href={`https://www.imdb.com/title/${imdbId}`}
-              target="_blank"
-              rel="noreferrer"
-              title={`IMDb: ${imdbId}`}
-            >
-              {imdbId}
-            </a>
-          )}
+          </span>
         </div>
       )}
     </div>
@@ -369,7 +362,7 @@ function DetailStats({ film }) {
 export default function FilmDetail({
   film, onClose, onChanged,
   initialEditing = false, initialMetaOpen = false,
-  readOnly = false,
+  readOnly = false, ratingView = 'all',
 }) {
   const metaOpen = initialMetaOpen && !readOnly;
   const [metaOpenState, setMetaOpen] = useState(metaOpen);
@@ -694,7 +687,7 @@ export default function FilmDetail({
                     </div>
                   )}
                 </div>
-                <DetailStats film={film} />
+                <DetailStats film={film} ratingView={ratingView} />
                 {/* margin-top: auto 让提示贴住列底，评分块则紧贴海报下方 */}
                 <div className="detail-meta-hint">
                   {meta?.mediaType === 'tv' ? '电视剧' : meta?.mediaType === 'movie' ? '电影' : ''}

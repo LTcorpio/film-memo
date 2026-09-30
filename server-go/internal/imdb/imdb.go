@@ -31,10 +31,9 @@ const (
 	fetchTimeout = 5 * time.Minute
 )
 
-// Rating 是单个 IMDb 条目的评分与投票数。
+// Rating 是单个 IMDb 条目的评分。
 type Rating struct {
 	Average float64
-	Votes   int64
 }
 
 // Meta 描述本地缓存的来源与状态。
@@ -212,11 +211,7 @@ func (s *Store) LookupAll(ctx context.Context, ids []string) (map[string]Rating,
 		if err != nil {
 			continue
 		}
-		votes, err := strconv.ParseInt(strings.TrimSpace(rest[j+1:]), 10, 64)
-		if err != nil {
-			votes = 0
-		}
-		out[tconst] = Rating{Average: avg, Votes: votes}
+		out[tconst] = Rating{Average: avg}
 		if len(out) == len(want) {
 			break // 全部命中，提前结束扫描
 		}

@@ -304,16 +304,6 @@ button, input, select, textarea {
 }
 .cat-card-no-meta.active .cat-card-name,
 .cat-card-no-meta.active .cat-card-count { color: #fff; }
-/* 待补评分筛选卡：次强调色（紫），区别于普通分类与「无元数据」警示卡 */
-.cat-card-missing-rating .cat-card-name { color: var(--accent-2); display: inline-flex; align-items: center; gap: 4px; }
-.cat-card-missing-rating .cat-card-count { color: var(--accent-2); }
-.cat-card-missing-rating:hover { border-color: var(--accent-2); }
-.cat-card-missing-rating.active {
-  background: var(--accent-2);
-  border-color: var(--accent-2);
-}
-.cat-card-missing-rating.active .cat-card-name,
-.cat-card-missing-rating.active .cat-card-count { color: #fff; }
 /* 新增记录卡：强调色按钮风格 */
 .cat-card-add {
   border-style: dashed;
@@ -392,6 +382,34 @@ button, input, select, textarea {
   border-radius: var(--radius);
   overflow: hidden;
 }
+/* 结果区右侧控件组：评分展示偏好 + 显示模式 */
+.meta-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* 评分展示偏好：文字分段控件，与 .view-toggle 同高同风格 */
+.rating-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.rating-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--text-dim);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
+}
+.rating-toggle button:hover { background: var(--bg-elev); color: var(--text); }
+.rating-toggle button.active { background: var(--accent); color: #fff; }
 .view-toggle button {
   display: inline-flex;
   align-items: center;
@@ -565,6 +583,10 @@ button, input, select, textarea {
   border-radius: var(--radius);
   overflow: hidden;
   cursor: pointer;
+  /* 纵向弹性布局：网格行内卡片等高（stretch），由 .card-body 撑开剩余高度，
+     使观看日期始终贴住卡片底部，标题换行时同排卡片底部依然对齐 */
+  display: flex;
+  flex-direction: column;
   transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .film-card:hover {
@@ -713,10 +735,11 @@ button, input, select, textarea {
   background: var(--rate-imdb-bg);
   border-color: color-mix(in srgb, var(--rate-imdb) 45%, transparent);
 }
-/* 两个 SVG 的字标占画布比例不同（IMDb 黄标仅占 512×512 画布的 50% 高，
-   豆瓣占 24×24 画布的约 85%），按此换算使两者可见高度一致（约 9px） */
+/* 两个 SVG 的字标占画布比例不同：豆瓣 24×24 画布内字标约占 85%；
+   IMDb 已是满幅 2:1 矩形（64×32 画布内无留白），故按可见尺寸直接设定
+   （18×9），使两者可见高度一致（约 9px），且不产生上下空白 */
 .rating-badge.douban .rating-badge-logo { width: 11px; height: 11px; }
-.rating-badge.imdb .rating-badge-logo { width: 18px; height: 18px; }
+.rating-badge.imdb .rating-badge-logo { width: 18px; height: 9px; }
 
 /* ===== 列表模式（表格） ===== */
 .film-list {
@@ -867,7 +890,12 @@ button, input, select, textarea {
 /* 占位符 */
 .row-dim { color: var(--text-dim); font-size: 12px; }
 
-.card-body { padding: 10px 12px 12px; }
+.card-body {
+  padding: 10px 12px 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
 .card-line1 {
   display: flex;
   align-items: center;
@@ -902,7 +930,9 @@ button, input, select, textarea {
   color: var(--text-dim);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  margin-top: 6px;
+  /* margin-top: auto 吃掉卡片多余高度，把日期压到卡片底部（padding-top 保底间距） */
+  margin-top: auto;
+  padding-top: 6px;
 }
 .cat-tag {
   background: var(--bg-elev2);
@@ -1056,26 +1086,26 @@ button, input, select, textarea {
   color: var(--text-dim);
 }
 .tag.genre { color: var(--accent); background: rgba(79, 158, 255, 0.12); }
-/* 详情页评分与 ID：海报下方，豆瓣/IMDb 各占一列，底色取自来源主题色 */
+/* 详情页评分与 ID：海报下方，豆瓣 / IMDb 各占一行（上下排列）。
+   每行左侧为来源 LOGO + 可点击 ID，右侧为评分值；底色取自来源主题色 */
 .detail-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin-top: 12px;
-  /* 不拉伸等高：无评分的一列内容更矮，stretch 会被拉到与有评分列同高而留白 */
-  align-items: start;
   /* 提升层级，避免被上方海报溢出的阴影压暗 */
   position: relative;
   z-index: 1;
 }
 .detail-stat {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   min-width: 0;
   border: 1px solid;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 6px 10px;
 }
 /* 底色用主题色与弹窗底色混合：既保留豆瓣绿 / IMDb 黄的识别度，
    又能让 LOGO 与灰色的「无评分」保持可读（纯实色会让同色系的 LOGO 糊掉）。
@@ -1090,34 +1120,20 @@ button, input, select, textarea {
   background: var(--rate-imdb-bg);
   border-color: color-mix(in srgb, var(--rate-imdb) 45%, transparent);
 }
-/* 固定高度承载 LOGO + 来源名，保证两列评分数字横向对齐 */
-.detail-stat-head {
+/* 左侧：LOGO 与 ID 同一行，ID 过长时省略 */
+.detail-stat-left {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
+  min-width: 0;
 }
-.detail-stat-logo { display: block; width: auto; }
-/* 两个 SVG 的字标占画布比例不同（IMDb 黄标仅占 512×512 画布的 50% 高，
-   豆瓣占 24×24 画布的约 85%），按此换算使两者可见高度一致 */
-.detail-stat.imdb .detail-stat-logo { height: 24px; }
-.detail-stat.douban .detail-stat-logo { height: 14px; }
-.detail-stat-name { font-size: 13px; font-weight: 600; }
-.detail-stat-value {
-  font-size: 20px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.25;
-  color: var(--stat-accent);
-}
-/* 评分后的满分，弱化为小字 */
-.detail-stat-max { font-size: 12px; font-weight: 400; opacity: 0.7; }
-/* 有 ID 但无评分：弱化为灰色小字 */
-.detail-stat-value.empty { font-size: 12px; font-weight: 400; color: var(--text-dim); }
-.detail-stat-sub { font-size: 11px; color: var(--text-dim); }
+.detail-stat-logo { display: block; flex: 0 0 auto; }
+/* 豆瓣 24×24 画布内字标约占 85%；IMDb 已是满幅 2:1 矩形（无留白），
+   按可见尺寸直接设定，使两者可见高度接近 */
+.detail-stat.douban .detail-stat-logo { width: auto; height: 14px; }
+.detail-stat.imdb .detail-stat-logo { width: 24px; height: 12px; }
 .detail-stat-id {
-  max-width: 100%;
-  margin-top: 2px;
+  min-width: 0;
   font-size: 12px;
   color: var(--stat-accent);
   text-decoration: none;
@@ -1126,6 +1142,18 @@ button, input, select, textarea {
   text-overflow: ellipsis;
 }
 .detail-stat-id:hover { text-decoration: underline; }
+.detail-stat-value {
+  flex: 0 0 auto;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  color: var(--stat-accent);
+}
+/* 评分后的满分，弱化为小字 */
+.detail-stat-max { font-size: 12px; font-weight: 400; opacity: 0.7; }
+/* 有 ID 但无评分：弱化为灰色小字 */
+.detail-stat-value.empty { font-size: 12px; font-weight: 400; color: var(--text-dim); }
 /* 详情页分类标签：与同行 .tag 尺寸/圆角统一，避免大小不一致 */
 .detail-tags .cat-tag {
   font-size: 12px;
