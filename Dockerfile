@@ -1,5 +1,5 @@
 # ===== Stage 1: 构建前端 =====
-FROM node:20-bookworm-slim AS client-build
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS client-build
 WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY client/ ./
 RUN npm run build
 
 # ===== Stage 2: 构建后端（纯 Go，无 cgo，无需编译工具链） =====
-FROM golang:1.26-bookworm AS go-build
+FROM golang:1.26-bookworm@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d AS go-build
 WORKDIR /app/server-go
 # 先拷依赖清单，利用层缓存
 COPY server-go/go.mod server-go/go.sum ./
@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/s
 # ===== Stage 3: 运行时（alpine，纯静态二进制，镜像更小、攻击面更小） =====
 # 选用 alpine 的前提：后端为 CGO_ENABLED=0 静态编译，不依赖 glibc，
 # 故 musl libc 完全兼容，无 cgo 兼容性风险。
-FROM alpine:3.20 AS runtime
+FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc AS runtime
 WORKDIR /app
 ENV PORT=8686
 # 数据库/图片默认路径与 compose 挂载点一致（compose 将 DockerData/film-memo/db 挂到 /app/data/db）
