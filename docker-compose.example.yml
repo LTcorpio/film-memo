@@ -1,0 +1,38 @@
+# ============================================================
+# 影迹（film-memo）—— docker compose 示例文件
+#
+# 用法：
+#   1) 复制为 docker-compose.yml（该文件名已在 .gitignore 中，不会误传）：
+#        cp docker-compose.example.yml docker-compose.yml
+#   2) 按需修改端口与数据目录挂载路径（见下方注释）
+#   3) 构建并启动（首次会构建镜像）：
+#        docker compose up -d --build
+#      或一键：make deploy（等价：构建镜像 + compose up -d 重建容器）
+#
+# 说明：
+#   - 数据（films.db / images）分别挂载到容器 /app/data/db、/app/data/images
+#     （镜像内置默认 DB_PATH=/app/data/db/films.db、IMAGES_DIR=/app/data/images）
+#   - 凭证经同目录 .env 的 ${TMDB_*} 注入，请勿把密钥写进本文件
+# ============================================================
+services:
+  film-memo:
+    # 由本项目根目录的 Dockerfile 构建；也可先 `make image` 再仅部署
+    image: film-memo:latest
+    build:
+      context: .
+    container_name: film-memo
+    ports:
+      # 宿主 8686 → 容器 8686；按需改为其它宿主端口
+      - "8686:8686"
+    # 只在需要时启动：容器停止后不会自动重启，需手动 docker compose up
+    restart: "no"
+    volumes:
+      # 数据库目录（相对本文件所在目录），首次启动会自动创建；
+      # 若要放到别处，改成你的宿主机路径，例如 /your/host/path/db:/app/data/db
+      - ./data/db:/app/data/db
+      # TMDB 海报/背景图（同上，按需改为你的宿主机路径）
+      - ./data/images:/app/data/images
+    environment:
+      # TMDB 凭证从 .env 自动注入（docker compose 默认读取同目录 .env）
+      - TMDB_ACCESS_TOKEN=${TMDB_ACCESS_TOKEN:-}
+      - TMDB_API_KEY=${TMDB_API_KEY:-}

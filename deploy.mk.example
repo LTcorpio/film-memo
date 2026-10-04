@@ -1,0 +1,15 @@
+# ============================================================
+# 本机私有部署配置示例
+#
+# 复制为 deploy.mk（该文件已在 .gitignore 中，不会上传到 GitHub），再按本机环境填写：
+#   cp deploy.mk.example deploy.mk
+# ============================================================
+
+# compose 栈所在目录：Makefile 会在该目录执行 `docker compose up -d <service>`
+# 例如把容器编排放在自己机器上的某个目录：
+# COMPOSE_DIR := /path/to/your/compose/stack
+COMPOSE_DIR :=
+
+# 如需改动镜像名 / 服务名可在此覆盖（通常无需修改）
+# FILM_IMAGE   := film-memo:latest
+# FILM_SERVICE := film-memo

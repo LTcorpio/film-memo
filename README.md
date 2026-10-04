@@ -123,23 +123,29 @@ cd ../server-go && go build -o server ./cmd/server # 编译 Go 后端（静态�
 
 ## Docker 部署
 
-镜像与运行分离：先单独构建镜像，再用 compose 启动。
+镜像与运行分离：镜像在项目根目录构建（`film-memo:latest`），容器由统一的 compose 栈负责运行。
 
 ```bash
 # 1) 编辑项目根目录 .env，至少填写 TMDB 凭证（二选一）：
 #    TMDB_ACCESS_TOKEN=...   # v4 Bearer Token（推荐）
 #    TMDB_API_KEY=...        # v3 API Key
-# 2) 构建镜像（运行时已含 ca-certificates，可正常访问 TMDB HTTPS）
-docker build -t film-memo:latest .
-# 3) 启动（凭证经 ${TMDB_*} 由 .env 注入为环境变量）
-docker compose up -d
+# 2) 配置 compose 栈目录（该文件不入库）：
+cp deploy.mk.example deploy.mk
+#    编辑 deploy.mk，把 COMPOSE_DIR 指向你的 compose 栈目录
+# 3) 一键部署：构建镜像 + 在栈内用新镜像重建容器
+make deploy
+#    或分步：make image（仅构建镜像）、make restart（仅重建容器）
+#    临时指定栈目录：make deploy COMPOSE_DIR=/path/to/compose
 ```
 
-- 服务端口：`8686`（宿主 8686 → 容器 8686）
-- TMDB 凭证：compose 默认读取同目录 `.env`，经 `TMDB_ACCESS_TOKEN` / `TMDB_API_KEY` 环境变量注入容器，应用通过 `os.Getenv` 读取（**不**会把密钥写进镜像或命令行）
-- 数据持久化：宿主 OneDrive 目录（`DockerData/film-memo/db`、`DockerData/film-memo/images`）分别挂载到容器 `/app/data/db`、`/app/data/images`
+> 没有现成 compose 栈时，可复制仓库根目录 `docker-compose.example.yml` 为
+> `docker-compose.yml`，按需改端口/挂载后 `docker compose up -d --build`。
+
+- 服务端口：容器内 `8686`，宿主映射由 compose 栈决定
+- TMDB 凭证：compose 默认读取栈目录 `.env`，经 `TMDB_ACCESS_TOKEN` / `TMDB_API_KEY` 注入容器，应用通过 `os.Getenv` 读取（**不**会把密钥写进镜像或命令行）
+- 数据持久化：由 compose 栈的 volumes 指定，分别挂载到容器 `/app/data/db`、`/app/data/images`
 - 重启策略：`restart: "no"`，按需手动 `docker compose up`；停止后不自动重启
-- 停止：`docker compose down`（数据保留）
+- 停止：在栈目录执行 `docker compose down`（数据保留）
 
 > 排障：若容器内刮削/搜索元数据无结果，先 `docker logs film-memo` 查看启动日志。
 > - 出现 `TMDB 凭证: 未配置` → 项目根目录 `.env` 缺失或其中未填 TMDB 凭证（compose 变量替换失败）；

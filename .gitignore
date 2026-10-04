@@ -7,3 +7,8 @@ client/dist/
 .DS_Store
 .workbuddy/
 .trae
+# 由示例复制而来的本地 compose（含主机路径）不入库，只提交 docker-compose.example.yml
+docker-compose.yml
+
+# 本机私有部署配置（含主机路径）不入库，只提交 deploy.mk.example
+deploy.mk
