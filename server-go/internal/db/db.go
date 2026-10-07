@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS viewings (
   platforms_raw       TEXT,                       -- 观看平台原始字段（按 "," 分割）
   location            TEXT,                       -- 观看地点
   notes               TEXT,                       -- 备注
+  watch_status        TEXT NOT NULL DEFAULT 'finished', -- 观看状态：watching 正在观看 / finished 已看完
   FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE CASCADE
 );
 
@@ -231,6 +232,18 @@ func (d *DB) migrate() error {
 	if !filmCols["douban_id"] {
 		if _, err := d.db.Exec("ALTER TABLE films ADD COLUMN douban_id TEXT;"); err != nil {
 			return fmt.Errorf("add films.douban_id: %w", err)
+		}
+	}
+
+	// 兼容旧库：补齐 viewings.watch_status（观看状态）。
+	// 带常量默认值建列，旧记录一律读作 'finished'（已看完），不改动任何存量数据。
+	viewingCols, err := d.columns("viewings")
+	if err != nil {
+		return err
+	}
+	if !viewingCols["watch_status"] {
+		if _, err := d.db.Exec("ALTER TABLE viewings ADD COLUMN watch_status TEXT NOT NULL DEFAULT 'finished';"); err != nil {
+			return fmt.Errorf("add viewings.watch_status: %w", err)
 		}
 	}
 
@@ -687,6 +700,10 @@ func (d *DB) buildWhere(f Filter) ([]string, []interface{}) {
 		where = append(where, "(f.imdb_id IS NULL OR TRIM(f.imdb_id) = '')")
 	} else if f.Missing == "douban" {
 		where = append(where, "(f.douban_id IS NULL OR TRIM(f.douban_id) = '')")
+	}
+	if f.Watching {
+		// 只看「正在观看」的记录（无该列的旧库由 Open 时迁移补齐，默认 finished 不会命中）
+		where = append(where, "v.watch_status = 'watching'")
 	}
 	if len(f.IDs) > 0 {
 		// 只在指定影视范围内操作（评分管理里勾选后刷新）

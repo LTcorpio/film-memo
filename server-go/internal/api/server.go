@@ -290,6 +290,9 @@ func buildFilterFromMap(m map[string]interface{}) db.Filter {
 	if v, ok := m["missing"]; ok {
 		f.Missing = toStr(v)
 	}
+	if v, ok := m["watching"]; ok {
+		f.Watching = toStr(v) == "1"
+	}
 	if v, ok := m["ids"]; ok {
 		f.IDs = toInt64Slice(v)
 	}

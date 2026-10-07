@@ -31,7 +31,7 @@ var filmIntFields = map[string]bool{
 }
 
 var viewingFieldWhiteList = []string{
-	"watch_year", "start_date", "end_date", "platforms_raw", "location", "notes",
+	"watch_year", "start_date", "end_date", "platforms_raw", "location", "notes", "watch_status",
 }
 
 var viewingIntFields = map[string]bool{
@@ -344,6 +344,10 @@ func (d *DB) Stats() (*Stats, error) {
 	}
 	if err := d.db.QueryRow(`SELECT COUNT(*) FROM viewings v
 		JOIN films f ON f.id = v.film_id WHERE f.douban_id IS NULL OR TRIM(f.douban_id) = ''`).Scan(&out.WithoutDouban); err != nil {
+		return nil, err
+	}
+	// 正在观看的记录数（类别卡片区的「正在观看」入口显示该计数）
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM viewings WHERE watch_status = 'watching'`).Scan(&out.Watching); err != nil {
 		return nil, err
 	}
 

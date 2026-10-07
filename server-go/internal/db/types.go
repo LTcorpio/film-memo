@@ -8,6 +8,7 @@ type Filter struct {
 	Category    string // "__no_meta__" 表示无元数据筛选
 	Q           string
 	Missing     string  // "imdb" / "douban"：对应 ID 为空的筛选
+	Watching    bool    // 只看 watch_status = 'watching' 的记录（正在观看）
 	IDs         []int64 // 仅处理这些影视（评分管理里手动勾选的条目）
 }
 
@@ -38,6 +39,7 @@ type Stats struct {
 	WithoutMetadata int64      `json:"withoutMetadata"`
 	WithoutImdb     int64      `json:"withoutImdb"`
 	WithoutDouban   int64      `json:"withoutDouban"`
+	Watching        int64      `json:"watching"`
 	ByCategory      []CatStat  `json:"byCategory"`
 	ByWatchYear     []YearStat `json:"byWatchYear"`
 }

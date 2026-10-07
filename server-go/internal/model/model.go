@@ -49,10 +49,10 @@ const FilmsCols = `f.id, f.category, f.name, f.imdb_id, f.douban_id,
   f.production_countries_raw, f.release_year, f.total_episodes`
 
 // ViewingsCols 显式列出 viewings 表列（无表别名，详情查询用）。
-const ViewingsCols = `id, watch_year, start_date, end_date, platforms_raw, location, notes`
+const ViewingsCols = `id, watch_year, start_date, end_date, platforms_raw, location, notes, watch_status`
 
 // ListCols 列表查询列：观看记录 + 影视 + 元数据（GET /api/films），顺序与 EntryRow.ScanPtrs 一致。
-const ListCols = `v.id, v.watch_year, v.start_date, v.end_date, v.platforms_raw, v.location, v.notes, ` +
+const ListCols = `v.id, v.watch_year, v.start_date, v.end_date, v.platforms_raw, v.location, v.notes, v.watch_status, ` +
 	FilmsCols + `, ` + MetaCols
 
 // FilmRow 是 films LEFT JOIN film_metadata 的扫描结构（影视级），字段顺序与
@@ -136,11 +136,12 @@ type ViewingRow struct {
 	PlatformsRaw *string `db:"platforms_raw"`
 	Location     *string `db:"location"`
 	Notes        *string `db:"notes"`
+	WatchStatus  *string `db:"watch_status"`
 }
 
 // ScanPtrs 顺序与 ViewingsCols 完全一致。
 func (r *ViewingRow) ScanPtrs() []interface{} {
-	return []interface{}{&r.ID, &r.WatchYear, &r.StartDate, &r.EndDate, &r.PlatformsRaw, &r.Location, &r.Notes}
+	return []interface{}{&r.ID, &r.WatchYear, &r.StartDate, &r.EndDate, &r.PlatformsRaw, &r.Location, &r.Notes, &r.WatchStatus}
 }
 
 // EntryRow 是列表查询（viewings JOIN films LEFT JOIN film_metadata）的扫描结构，
@@ -214,13 +215,14 @@ type MetadataOut struct {
 
 // ViewingOut 观看记录（前端对象）。
 type ViewingOut struct {
-	ID        int64    `json:"id"`
-	WatchYear *int64   `json:"watchYear"`
-	StartDate string   `json:"startDate"`
-	EndDate   string   `json:"endDate"`
-	Platforms []string `json:"platforms"`
-	Location  string   `json:"location"`
-	Notes     string   `json:"notes"`
+	ID          int64    `json:"id"`
+	WatchYear   *int64   `json:"watchYear"`
+	StartDate   string   `json:"startDate"`
+	EndDate     string   `json:"endDate"`
+	Platforms   []string `json:"platforms"`
+	Location    string   `json:"location"`
+	Notes       string   `json:"notes"`
+	WatchStatus string   `json:"watchStatus"`
 }
 
 // Entry 是列表条目：一条观看记录 + 所属影视信息。
@@ -234,6 +236,7 @@ type Entry struct {
 	Platforms              []string     `json:"platforms"`
 	Location               string       `json:"location"`
 	Notes                  string       `json:"notes"`
+	WatchStatus            string       `json:"watchStatus"`
 	Category               string       `json:"category"`
 	Name                   string       `json:"name"`
 	ImdbID                 string       `json:"imdbId"`
@@ -421,16 +424,33 @@ func shapeMetadata(r *FilmRow) *MetadataOut {
 	}
 }
 
+// 观看状态取值：watching 正在观看 / finished 已看完（缺省）。
+// 旧库补列时所有存量记录都取默认值 finished，界面上等价于「未标记」。
+const (
+	WatchStatusWatching = "watching"
+	WatchStatusFinished = "finished"
+)
+
+// watchStatusOf 归一观看状态：NULL / 空 / 未知值一律按 finished（已看完）处理，
+// 保证前端只需判断一次 === 'watching'。
+func watchStatusOf(s *string) string {
+	if s != nil && *s == WatchStatusWatching {
+		return WatchStatusWatching
+	}
+	return WatchStatusFinished
+}
+
 // ShapeViewing 把观看记录行整理为前端对象。
 func ShapeViewing(v *ViewingRow) ViewingOut {
 	return ViewingOut{
-		ID:        v.ID,
-		WatchYear: v.WatchYear,
-		StartDate: strPtr(v.StartDate),
-		EndDate:   strPtr(v.EndDate),
-		Platforms: parsePlatforms(v.PlatformsRaw),
-		Location:  strPtr(v.Location),
-		Notes:     strPtr(v.Notes),
+		ID:          v.ID,
+		WatchYear:   v.WatchYear,
+		StartDate:   strPtr(v.StartDate),
+		EndDate:     strPtr(v.EndDate),
+		Platforms:   parsePlatforms(v.PlatformsRaw),
+		Location:    strPtr(v.Location),
+		Notes:       strPtr(v.Notes),
+		WatchStatus: watchStatusOf(v.WatchStatus),
 	}
 }
 
@@ -445,6 +465,7 @@ func ShapeEntry(r *EntryRow) Entry {
 		Platforms:              parsePlatforms(r.ViewingRow.PlatformsRaw),
 		Location:               strPtr(r.ViewingRow.Location),
 		Notes:                  strPtr(r.ViewingRow.Notes),
+		WatchStatus:            watchStatusOf(r.ViewingRow.WatchStatus),
 		Category:               strPtr(r.FilmRow.Category),
 		Name:                   strPtr(r.FilmRow.Name),
 		ImdbID:                 strPtr(r.FilmRow.ImdbID),

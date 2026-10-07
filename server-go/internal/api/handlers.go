@@ -108,6 +108,7 @@ func (s *Server) handleListFilms(w http.ResponseWriter, r *http.Request) {
 		Category:    q.Get("category"),
 		Q:           q.Get("q"),
 		Missing:     q.Get("missing"),
+		Watching:    q.Get("watching") == "1",
 	}
 	rows, err := s.db.ListFilms(f)
 	if err != nil {
