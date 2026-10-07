@@ -342,7 +342,8 @@ export default function RatingManager({ films, filters, job, onClose, onChanged 
     >
       <div className="modal rating-manager" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
-        <h3><Icon name="star" size={16} /> 评分管理</h3>
+        {/* 标题图标尺寸 = 标题字号（18px），沿用 .app-header h1「图标 26px 配 26px 字」的规则 */}
+        <h3><Icon name="star" size={18} /> 评分管理</h3>
         <div className="rating-manager-sub">
           共 {films.length} 条记录 · 统一维护 IMDb 号与豆瓣 ID，评分一次拉取后存入数据库，无需重复请求
         </div>

@@ -78,7 +78,9 @@ export default function Filters({ value, onChange, onReset, options, activeCount
                 : '评分管理：批量维护豆瓣 ID 与评分数据源'
             }
           >
-            <Icon name="star" size={14} /> 评分管理
+            {/* 星形实心只填了自身外接盒的 43%，同名义尺寸下比描边图标显轻，
+                故比按钮内其他图标（14px）大一档到 16px，追平视觉重量 */}
+            <Icon name="star" size={16} /> 评分管理
             {ratingJob?.running && (
               <span className="btn-ratings-running">
                 <span className="btn-ratings-dot" />

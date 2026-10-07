@@ -398,6 +398,7 @@ export default function FilmDetail({
     platforms: film.platforms || [],
     location: film.location,
     notes: film.notes,
+    watchStatus: film.watchStatus,
   }];
 
   // initialEditing 时立即进入编辑：优先匹配被点击的那条观看记录
@@ -420,6 +421,7 @@ export default function FilmDetail({
     watchYear: f.watchYear ?? null,
     startDate: f.startDate || null,
     endDate: f.endDate || null,
+    watchStatus: f.watchStatus === 'watching' ? 'watching' : 'finished',
     platforms: (f.platformsRaw || '').split(',').map((s) => s.trim()).filter(Boolean),
     location: f.location || null,
     notes: f.notes || null,
@@ -491,6 +493,7 @@ export default function FilmDetail({
           watch_year: d.watchYear ?? null,
           start_date: d.startDate || null,
           end_date: d.endDate || null,
+          watch_status: d.watchStatus === 'watching' ? 'watching' : 'finished',
           platforms_raw: d.platforms.length > 0 ? d.platforms.join(',') : null,
           location: d.location || null,
           notes: d.notes || null,
@@ -589,6 +592,7 @@ export default function FilmDetail({
       watchYear: null,
       startDate: null,
       endDate: null,
+      watchStatus: 'finished',
       platforms: [],
       location: null,
       notes: null,
@@ -607,6 +611,7 @@ export default function FilmDetail({
       watchYear: null,
       startDate: null,
       endDate: null,
+      watchStatus: 'finished',
       platformsRaw: '',
       location: '',
       notes: '',
@@ -657,6 +662,15 @@ export default function FilmDetail({
     >
       <div className="modal film-detail" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
+
+        {/* 编辑态标题行：为右上角绝对定位的 .modal-close 留出独立空间，
+            避免它压住表单第一行控件；固定在滚动区之上，不随内容滚动 */}
+        {editing && (
+          <div className="detail-head">
+            {/* 标题图标尺寸 = 标题字号（18px），与「新增记录」「评分管理」两个弹窗的标题图标一致 */}
+            <h3><Icon name="edit" size={18} /> 编辑「{film.name}」</h3>
+          </div>
+        )}
 
         <div className="detail-scroll">
           {meta?.backdropUrl && !editing && (
@@ -787,6 +801,11 @@ export default function FilmDetail({
                       <div className="viewing-record-head">
                         <span className="viewing-index">
                           <Icon name="calendar" size={12} /> 第 {idx + 1} 次观看{v.watchYear ? ` · ${v.watchYear} 年` : ''}
+                          {v.watchStatus === 'watching' && (
+                            <span className="watching-tag" title="正在观看；看完后编辑本条记录补上结束观看日期即可">
+                              <Icon name="clock" size={11} /> 正在观看
+                            </span>
+                          )}
                         </span>
                         {!readOnly && (
                           <button

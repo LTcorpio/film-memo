@@ -36,10 +36,20 @@ export default function FilmCard({ film, onClick, onContextMenu, ratingView = 'a
             <span className="ph-name">{film.name}</span>
           </div>
         )}
-        {!film.hasMetadata && (
-          <span className="no-meta-badge" title="未刮削元数据">
-            <Icon name="alert" size={11} /> 无元数据
-          </span>
+        {(!film.hasMetadata || film.watchStatus === 'watching') && (
+          <div className="poster-badges">
+            {/* 左上角徽标纵向排列，「正在观看」在上，避免与「无元数据」重叠 */}
+            {film.watchStatus === 'watching' && (
+              <span className="watching-badge" title="正在观看；看完后编辑记录补上结束观看日期">
+                <Icon name="clock" size={11} /> 正在观看
+              </span>
+            )}
+            {!film.hasMetadata && (
+              <span className="no-meta-badge" title="未刮削元数据">
+                <Icon name="alert" size={11} /> 无元数据
+              </span>
+            )}
+          </div>
         )}
         {(hasDouban || hasImdb) && (
           <div className="rating-badges">

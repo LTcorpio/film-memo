@@ -42,6 +42,9 @@
   --rate-imdb-bg: color-mix(in srgb, var(--rate-imdb) 16%, var(--bg-elev));
   /* 详情页海报阴影：比默认略轻，避免压在下方评分块上显得脏 */
   --poster-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+  /* 观看状态开关（编辑表单里的单枚按钮）的底色：暗色主题下弹窗底色本身就是 --bg-elev，
+     按钮必须比它亮一档才看得出「这是控件」，故取 --bg-elev2 的值 */
+  --status-toggle-bg: #232735;
 }
 
 /* 亮色主题变量 */
@@ -83,6 +86,9 @@
   --rate-douban: #1a7f37;
   --rate-imdb: #8a6100;
   --poster-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  /* 观看状态开关的底色：亮色主题下取纯白（antd buttonBg = colorBgContainer = #fff），
+     与同排灰色填充（--bg-elev2）的输入框形成区分 —— 一眼可辨「按钮」而非「输入框」 */
+  --status-toggle-bg: #ffffff;
 }
 
 /* 系统主题：未显式选择时跟随系统 */
@@ -121,6 +127,8 @@
     --rate-douban: #1a7f37;
     --rate-imdb: #8a6100;
     --poster-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    /* 观看状态开关的底色：系统跟随亮色，取值与 [data-theme="light"] 一致 */
+    --status-toggle-bg: #ffffff;
   }
 }
 
@@ -177,6 +185,37 @@ button, input, select, textarea {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
+}
+/* 标题品牌锁定（lockup）：品牌名 + 细分隔线 + 副标题。
+   用 inline-flex 让三者垂直居中，同时保住 h1 的基线（.app-header 以 baseline 对齐右侧操作区），
+   因此不能把 h1 本身改成 flex —— 那样 h1 的基线会取首个 flex item（SVG 图标）的底边，整行会上移 */
+.app-header h1 .h1-lockup {
+  display: inline-flex;
+  align-items: center;
+}
+/* 品牌名：强调色→辅色渐变字；不支持 background-clip:text 时回退为纯强调色 */
+.app-header h1 .h1-brand { color: var(--accent); }
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .app-header h1 .h1-brand {
+    background: linear-gradient(120deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+/* 替代原「·」中缀的细分隔线：固定 18px 高，与品牌名视觉居中 */
+.app-header h1 .h1-divider {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 10px;
+  background: var(--border);
+}
+/* 副标题弱化为小字次要色，与 26px 品牌名拉开层级 */
+.app-header h1 .h1-sub {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
 }
 .header-actions {
   display: flex;
@@ -246,10 +285,16 @@ button, input, select, textarea {
   align-items: center;
   gap: 8px;
 }
+/* 底部操作栏：与编辑弹窗的底栏取值逐项一致 ——
+   分隔线通栏贯穿弹窗宽度、距上方内容 24px、按钮距线 16px / 距底 24px / 左右 24px。
+   负外边距抵消 .add-film-modal 自身的 24px 内边距：左右 -24px 把底栏宽度还原到弹窗全宽
+   （分隔线因此通栏，与 .modal.film-detail .detail-footer 相同），底部 -24px 让底栏贴住弹窗底边、
+   由自身 padding-bottom 提供底部留白。
+   ⚠️ 这里的 -24px 与 .add-film-modal 的 padding 值互相绑定，改内边距时须同步改这里 */
 .add-film-modal .detail-footer {
   border-top: 1px solid var(--border);
-  margin-top: 20px;
-  padding-top: 16px;
+  margin: 24px -24px -24px;
+  padding: 16px 24px 24px;
 }
 
 /* Category breakdown — 小卡片 */
@@ -304,6 +349,16 @@ button, input, select, textarea {
 }
 .cat-card-no-meta.active .cat-card-name,
 .cat-card-no-meta.active .cat-card-count { color: #fff; }
+/* 正在观看筛选卡：与「无元数据」同构，用强调色而非警示色区分 */
+.cat-card-watching .cat-card-name { color: var(--accent); display: inline-flex; align-items: center; gap: 4px; }
+.cat-card-watching .cat-card-count { color: var(--accent); }
+.cat-card-watching:hover { border-color: var(--accent); }
+.cat-card-watching.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.cat-card-watching.active .cat-card-name,
+.cat-card-watching.active .cat-card-count { color: #fff; }
 /* 新增记录卡：强调色按钮风格 */
 .cat-card-add {
   border-style: dashed;
@@ -691,12 +746,32 @@ button, input, select, textarea {
   opacity: 1;
 }
 
-.no-meta-badge {
+/* 海报左上角徽标容器：多枚徽标纵向排列，避免彼此重叠 */
+.poster-badges {
   position: absolute;
   top: 6px;
   left: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.no-meta-badge {
   background: var(--badge-bg);
   color: var(--amber);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+/* 正在观看：进行中的观影用强调色，与「无元数据」的警示色区分 */
+.watching-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--badge-bg);
+  color: var(--accent);
   font-size: 10px;
   padding: 2px 6px;
   border-radius: 4px;
@@ -1001,11 +1076,34 @@ button, input, select, textarea {
   flex: 1;
   overflow-y: auto;
 }
+/* 编辑态标题行：与其它弹窗（搜索元数据 / 评分管理 / 新增记录）的标题规范逐项一致 ——
+   顶部与左侧内边距 24px（对齐 .add-film-modal / .meta-search / .rating-manager 的 padding:24px）、
+   标题下留白 16px、无分隔线。
+   一处刻意保留的差异：右内边距 56px 把绝对定位的 .modal-close（30×30，top/right 12px）
+   让在旁边，避免长片名钻到关闭按钮下面。
+   flex-shrink:0 使其固定在 .detail-scroll 之上、不参与滚动 */
+.modal.film-detail .detail-head {
+  flex-shrink: 0;
+  /* 四值简写：上 24 与左 24 对齐其它弹窗；右 56 让开关闭按钮；下 16 由标题留白承担 */
+  padding: 24px 56px 16px 24px;
+}
+.modal.film-detail .detail-head h3 {
+  margin: 0;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 底部操作栏：与新增弹窗（.add-film-modal .detail-footer）取值逐项一致 ——
+   分隔线通栏、按钮距线 16px / 距底 24px / 左右 24px。
+   分隔线之所以通栏：本弹窗自身没有内边距，底栏是它的直接子元素，宽度即弹窗内容宽；
+   新增弹窗是靠负外边距抵消自身内边距来达到同样效果。
+   距上方内容 24px 由 .detail-main.edit-layout 的 padding-bottom 提供 */
 .modal.film-detail .detail-footer {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   background: var(--bg-elev);
-  padding: 16px 20px;
+  padding: 16px 24px 24px;
 }
 .modal-close {
   position: absolute;
@@ -1184,6 +1282,57 @@ button, input, select, textarea {
   color: var(--text-dim);
   font-size: 12px;
 }
+/* 「正在观看」标记：详情页观看记录条目与列表模式共用配色 */
+.watching-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.row-watching { color: var(--accent); font-size: 12px; }
+/* 观看状态开关（编辑表单）：单枚按钮，点击在「正在观看 / 已看完」之间循环切换。
+   外观沿用上一版单选按钮的单枚形态 —— 底色 --status-toggle-bg + 自身 1px 边框 + 8px 圆角；
+   按钮上显示的是**当前状态**（图标 + 文字），由 title 补出「点击后变成什么」。
+   处于 watching 时整枚按钮（边框 + 文字 + 图标）转强调色，与列表里那条「正在观看」标记
+   （.row-watching）同色，两处语义一眼对应；finished 时为普通描边色 ——
+   避免出现「已看完却整枚是蓝的」这种反向歧义。
+   未打开态 hover 只提亮文字、不动边框（沿用上一轮确认稿的取向），
+   故选择器必须带 :not(.on)，否则会盖掉开关打开态的文字色。
+   几何：38px（全局 border-box，含自身 1px 边框）= .edit-form 输入框等高。
+   禁用（该条观看记录已标记移除）：整枚淡出 —— 避免只剩文字变淡、边框仍鲜亮。
+   （上一版「相邻按钮 -1px 叠边框 / 两端圆角」的规则随多按钮形态一并移除。） */
+.status-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  height: 38px;
+  padding: 0 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--status-toggle-bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.status-toggle:not(.on):hover:not(:disabled) { color: var(--accent); }
+/* 打开态（正在观看）：边框与文字一并转强调色 */
+.status-toggle.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.status-toggle:disabled { opacity: 0.55; cursor: not-allowed; }
 .viewing-record .watch-info { margin-bottom: 0; }
 /* 备注等后续 dl 与上方字段行保持充足间隔 */
 .viewing-record .watch-info + .watch-info { margin-top: 16px; }
@@ -1613,7 +1762,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   vertical-align: -0.18em;
   flex-shrink: 0;
 }
-.app-header h1 .icon { vertical-align: -0.12em; margin-right: 4px; }
+/* 标题图标与品牌名同色系（强调色），避免与渐变品牌名之间出现第三种颜色 */
+.app-header h1 .icon { vertical-align: -0.12em; margin-right: 6px; color: var(--accent); }
 .error-banner .icon { vertical-align: -0.2em; margin-right: 4px; }
 .rating-badge, .no-meta-badge {
   display: inline-flex;
@@ -1664,7 +1814,12 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   flex-direction: column;
   gap: 12px;
 }
-.edit-form label {
+/* .field 是与 label 视觉等价的替身：用于「标签文字 + 可交互控件」这一格 ——
+   当控件是 button（labelable 元素）时，label 会让点标签文字顺带触发控件，
+   故改用 div.field。目前只有「观看状态」一处使用。
+   ⚠️ 改 label 的样式时务必同步改这里，否则两者会漂移。 */
+.edit-form label,
+.edit-form .field {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1676,7 +1831,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   flex-wrap: wrap;
   gap: 12px;
 }
-.edit-form .form-row label { flex: 1; min-width: 120px; }
+.edit-form .form-row label,
+.edit-form .form-row .field { flex: 1; min-width: 120px; }
 .edit-form input, .edit-form select, .edit-form textarea {
   background: var(--bg-elev2);
   color: var(--text);
@@ -1871,10 +2027,13 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
 /* ---- 图片替换工具条 ---- */
+/* 编辑态内容区：左右 24px 与标题行、底栏对齐（其余弹窗同为 24px）；
+   顶部 0 —— 上方标题行已留 16px 下边距，再叠加 .detail-main 的 20px 会变成 36px 空档 */
 .detail-main.edit-layout {
   display: flex;
   gap: 24px;
   align-items: flex-start;
+  padding: 0 24px 24px;
 }
 .edit-media-col {
   flex-shrink: 0;

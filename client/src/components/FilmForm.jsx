@@ -27,6 +27,48 @@ function YearInput({ value, onChange, disabled }) {
   );
 }
 
+/** 观看状态备选项：value 与后端 viewing.watch_status 取值一一对应。
+    数组顺序即点击循环顺序；icon 复用 Icon.jsx 里既有的两个图标
+    （clock = 时长 / check = 对勾），不新增素材 */
+const STATUS_OPTS = [
+  { value: 'watching', label: '正在观看', icon: 'clock' },
+  { value: 'finished', label: '已看完', icon: 'check' },
+];
+
+/**
+ * 观看状态开关（单枚按钮，点击在两个状态之间循环切换）。
+ * 按钮上显示的是「当前状态」（图标 + 文字），而不是「点击后的结果」：
+ * 处于 watching 时整枚按钮（边框 + 文字 + 图标）转强调色，与列表里那条
+ * 「正在观看」标记（.row-watching）同色，两处语义一眼对应；finished 时是普通描边色。
+ * 单枚按钮的信息量低于原来的单选组，故状态由「图标 + 文字 + 颜色」三重表达，
+ * 并由 title 补出「点击后变成什么」，弥补「看不出下一态」这个短处。
+ * 几何沿用上一版单选按钮：38px 高（全局 border-box，含自身 1px 边框）= .edit-form 输入框等高。
+ * a11y：按钮文字本身就是当前状态名，故用 aria-pressed 表达「是否处于 watching」；
+ * 不用 role="switch" —— 那要求按钮名是开关的名字而非状态名，与本控件的文案冲突。
+ * 图标取 14px：stroke 图标在小尺寸下视觉偏轻，比 13px 的汉字大一档才等重 ——
+ * 同 .viewing-removed-hint（12px 字配 13px 图标）的取向，不是「图标尺寸 = 字号」那一条
+ * （那条适用于标题处的大字号图标）。
+ * 纯 CSS 实现，无测量逻辑（与已被替换掉的「分段切换器」不同，这里没有滑块要定位）。
+ */
+function StatusToggle({ value, disabled, onChange }) {
+  const cur = STATUS_OPTS.find((o) => o.value === value) ?? STATUS_OPTS[STATUS_OPTS.length - 1];
+  const next = STATUS_OPTS[(STATUS_OPTS.indexOf(cur) + 1) % STATUS_OPTS.length];
+  const isWatching = cur.value === 'watching';
+  return (
+    <button
+      type="button"
+      className={`status-toggle${isWatching ? ' on' : ''}`}
+      aria-pressed={isWatching}
+      disabled={disabled}
+      title={`当前：${cur.label}；点击切换为${next.label}`}
+      onClick={() => onChange(next.value)}
+    >
+      <Icon name={cur.icon} size={14} />
+      {cur.label}
+    </button>
+  );
+}
+
 /**
  * 影视 + 观看记录编辑表单（可在新增/编辑复用）。
  * 分为两组：
@@ -143,6 +185,18 @@ export default function FilmForm({
           <Icon name="alert" size={13} /> 该观看记录已标记为移除，点击「保存」后生效
         </div>
       )}
+      {/* 这格用 div 而非 label：label 对 button 而言是 labelable 容器，
+          点标题「观看状态」四个字会顺带触发里面的按钮（单枚按钮形态下＝直接切状态）。
+          样式由 .edit-form .field 与 label 等价承担。 */}
+      <div className="form-row">
+        <div className="field">观看状态
+          <StatusToggle
+            value={value.watchStatus}
+            disabled={viewingRemoved}
+            onChange={(v) => set('watchStatus', v)}
+          />
+        </div>
+      </div>
       <div className="form-row">
         <label>观看年份
           <YearInput value={value.watchYear} onChange={(v) => set('watchYear', v)} disabled={viewingRemoved} />
@@ -184,6 +238,7 @@ export function emptyFilmForm() {
     doubanId: '',
     startDate: null,
     endDate: null,
+    watchStatus: 'finished',
     platformsRaw: '',
     location: '',
     notes: '',
@@ -206,6 +261,7 @@ export function filmFormToPatches(f) {
       watch_year: f.watchYear ?? null,
       start_date: f.startDate || null,
       end_date: f.endDate || null,
+      watch_status: f.watchStatus === 'watching' ? 'watching' : 'finished',
       platforms_raw: f.platformsRaw || null,
       location: f.location || null,
       notes: f.notes || null,
@@ -227,6 +283,8 @@ export function filmToForm(film, viewing) {
     doubanId: film.doubanId,
     startDate: viewing?.startDate ?? null,
     endDate: viewing?.endDate ?? null,
+    // 缺失（旧数据 / 列表条目未拉取详情）一律按「已看完」处理
+    watchStatus: viewing?.watchStatus === 'watching' ? 'watching' : 'finished',
     platformsRaw: (viewing?.platforms || []).join(','),
     location: viewing?.location ?? null,
     notes: viewing?.notes ?? null,

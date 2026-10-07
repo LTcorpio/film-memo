@@ -60,7 +60,7 @@ function loadReadOnly() {
 
 export default function App() {
   const [filters, setFilters] = useState({
-    watchYear: '', releaseYear: '', platform: '', category: '', q: '', missing: '',
+    watchYear: '', releaseYear: '', platform: '', category: '', q: '', missing: '', watching: '',
   });
   const [films, setFilms] = useState([]);
   const [filterOpts, setFilterOpts] = useState(null);
@@ -207,7 +207,7 @@ export default function App() {
 
   const resetFilters = () => {
     setPage(1);
-    setFilters({ watchYear: '', releaseYear: '', platform: '', category: '', q: '', missing: '' });
+    setFilters({ watchYear: '', releaseYear: '', platform: '', category: '', q: '', missing: '', watching: '' });
     setLoading(true);
   };
 
@@ -326,7 +326,17 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1><Icon name="film" size={26} />影迹 · 个人影视观看记录</h1>
+        <h1>
+          <Icon name="film" size={26} />
+          {/* 品牌锁定（lockup）：品牌名用强调色→辅色渐变字，细竖线分隔，副标题降为小字次要色。
+              外层 inline-flex 让图文与分隔线垂直居中；用 inline-flex 而非把 h1 改成 flex，
+              是为了保住 h1 的基线（.app-header 以 baseline 对齐右侧操作区） */}
+          <span className="h1-lockup">
+            <span className="h1-brand">影迹</span>
+            <span className="h1-divider" aria-hidden="true" />
+            <span className="h1-sub">个人影视观看记录</span>
+          </span>
+        </h1>
         <div className="header-actions">
           <button
             type="button"
@@ -371,6 +381,10 @@ export default function App() {
           active={filters.category}
           onSelect={(k) =>
             updateFilters((f) => ({ ...f, category: f.category === k ? '' : k }))
+          }
+          watching={filters.watching}
+          onToggleWatching={() =>
+            updateFilters((f) => ({ ...f, watching: f.watching === '1' ? '' : '1' }))
           }
           readOnly={readOnly}
           onAdd={() => setAddingFilm(true)}
@@ -586,7 +600,8 @@ function AddFilmModal({ onClose, onCreated }) {
     >
       <div className="modal add-film-modal" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} title="关闭"><Icon name="close" size={16} /></button>
-        <h3><Icon name="plus" size={16} /> 新增观影记录</h3>
+        {/* 标题图标尺寸 = 标题字号（18px），与「编辑」「评分管理」两个弹窗的标题图标一致 */}
+        <h3><Icon name="plus" size={18} /> 新增观影记录</h3>
         {err && <div className="error-banner small"><Icon name="alert" size={14} /> {err}</div>}
         <FilmForm value={form} onChange={setForm} />
         <div className="detail-footer">
@@ -617,9 +632,10 @@ function AddFilmModal({ onClose, onCreated }) {
   );
 }
 
-function CategoryBreakdown({ stats, active, onSelect, readOnly, onAdd }) {
+function CategoryBreakdown({ stats, active, onSelect, watching, onToggleWatching, readOnly, onAdd }) {
   const total = stats.total;
   const noMetaCount = stats.withoutMetadata ?? 0;
+  const watchingCount = stats.watching ?? 0;
   const NO_META = '__no_meta__';
   return (
     <div className="cat-cards">
@@ -632,6 +648,18 @@ function CategoryBreakdown({ stats, active, onSelect, readOnly, onAdd }) {
         <span className="cat-card-name">全部</span>
         <span className="cat-card-count">{total}</span>
       </button>
+      {/* 正在观看：计数为 0 时不显示，但筛选激活中始终保留入口避免「有筛选无入口」 */}
+      {(watchingCount > 0 || watching === '1') && (
+        <button
+          type="button"
+          className={`cat-card cat-card-watching${watching === '1' ? ' active' : ''}`}
+          onClick={onToggleWatching}
+          title={`正在观看: ${watchingCount} 部`}
+        >
+          <span className="cat-card-name"><Icon name="clock" size={13} /> 正在观看</span>
+          <span className="cat-card-count">{watchingCount}</span>
+        </button>
+      )}
       {noMetaCount > 0 && (
         <button
           type="button"

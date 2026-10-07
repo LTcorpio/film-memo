@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Icon from './Icon.jsx';
 import PlatformTag from './PlatformTag.jsx';
 
 const ICON_BASE = '/icon';
@@ -88,6 +89,7 @@ export default function FilmList({ films, onClick, onContextMenu, ratingView = '
             const meta = film.metadata;
             const title = meta?.title || film.name;
             const year = film.releaseYear || meta?.releaseYear || '';
+            const isWatching = film.watchStatus === 'watching';
             return (
               <tr
                 key={film.id}
@@ -161,18 +163,25 @@ export default function FilmList({ films, onClick, onContextMenu, ratingView = '
                   )}
                 </td>
                 <td className="col-date">
-                  {film.startDate ? (
-                    film.endDate && film.endDate !== film.startDate ? (
-                      <div className="row-date-lines">
+                  {film.startDate || isWatching ? (
+                    <div className="row-date-lines">
+                      {film.startDate && (
                         <span className="row-date-item"><i className="date-tag start">起</i>{film.startDate}</span>
+                      )}
+                      {film.endDate && film.endDate !== film.startDate && (
                         <span className="row-date-item"><i className="date-tag end">止</i>{film.endDate}</span>
-                      </div>
-                    ) : (
-                      <div className="row-date-lines">
-                        <span className="row-date-item"><i className="date-tag start">起</i>{film.startDate}</span>
-                        <span className="row-date-item"><i className="date-tag placeholder">止</i>—</span>
-                      </div>
-                    )
+                      )}
+                      {/* 正在观看：结束日期未知，用状态标记替代「止 —」 */}
+                      {isWatching ? (
+                        <span className="row-date-item row-watching">
+                          <Icon name="clock" size={11} /> 正在观看
+                        </span>
+                      ) : (
+                        film.startDate && !film.endDate && (
+                          <span className="row-date-item"><i className="date-tag placeholder">止</i>—</span>
+                        )
+                      )}
+                    </div>
                   ) : (
                     <span className="row-dim">—</span>
                   )}
